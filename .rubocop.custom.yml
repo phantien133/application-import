@@ -1,0 +1,206 @@
+# Project RuboCop customizations
+#
+# Every project-specific rule lives here; .rubocop.yml only wires up the base
+# layers (plugins, inherit_gem, AllCops). This file is loaded via inherit_from
+# and overrides all gem configs (Omakase, Standard, plugins).
+#
+# Layout: one section per department, each split into
+#   Enabled  - cops turned on or tuned (style / thresholds)
+#   Disabled - cops turned off
+# Keep cops alphabetical inside each group.
+
+# =============================================================================
+# Departments
+# =============================================================================
+# Omakase disables whole departments. Without re-enabling them RuboCop treats
+# Lint as disabled and rejects Standard's `Lint/Syntax` entry ("It's not
+# possible to disable this cop"). Individual cops keep the value set by
+# Standard / plugins / this file.
+Bundler:
+  Enabled: true
+Gemspec:
+  Enabled: true
+Layout:
+  Enabled: true
+Lint:
+  Enabled: true
+Metrics:
+  Enabled: true
+Naming:
+  Enabled: true
+Performance:
+  Enabled: true
+Rails:
+  Enabled: true
+Security:
+  Enabled: true
+Style:
+  Enabled: true
+
+# =============================================================================
+# Layout
+# =============================================================================
+
+# --- Enabled -----------------------------------------------------------------
+
+# Standard (stricter than Omakase): consistent indentation.
+Layout/IndentationConsistency:
+  Enabled: true
+  EnforcedStyle: normal
+
+# Standard (Omakase turns it off).
+Layout/IndentationWidth:
+  Enabled: true
+
+# Omakase: `[ a, [ b, c ] ]` not `[a, [b, c]]`; `[]` not `[ ]`
+Layout/SpaceInsideArrayLiteralBrackets:
+  EnforcedStyle: space
+  EnforcedStyleForEmptyBrackets: no_space
+
+# Omakase: `foo { }` not `foo {}`
+Layout/SpaceInsideBlockBraces:
+  EnforcedStyleForEmptyBraces: space
+
+# Omakase: `{ a: 1 }` not `{a: 1}`; `{}` not `{  }`
+Layout/SpaceInsideHashLiteralBraces:
+  EnforcedStyle: space
+  EnforcedStyleForEmptyBraces: no_space
+
+# --- Disabled ----------------------------------------------------------------
+
+# Omakase: `%w[ foo ]` and `%w[foo]` both allowed.
+Layout/SpaceInsidePercentLiteralDelimiters:
+  Enabled: false
+
+# =============================================================================
+# Metrics
+# =============================================================================
+# Standard disables every Metrics cop one by one, so each is re-enabled here.
+# Thresholds are RuboCop defaults unless noted.
+
+# --- Enabled -----------------------------------------------------------------
+
+Metrics/AbcSize:
+  Enabled: true
+  Exclude:
+    - "**/db/migrate/**/*"   # declarative schema changes
+
+# DSL blocks (routes, environments, specs, migrations, rake) are long by nature.
+Metrics/BlockLength:
+  Enabled: true
+  CountAsOne: [ "array", "hash", "heredoc", "method_call" ]
+  Exclude:
+    - "config/**/*"
+    - "db/**/*"
+    - "lib/tasks/**/*"
+    - "spec/**/*"
+    - "Gemfile"
+
+Metrics/BlockNesting:
+  Enabled: true
+
+# Multi-line literals count as one line so data does not inflate lengths.
+Metrics/ClassLength:
+  Enabled: true
+  CountAsOne: [ "array", "hash", "heredoc", "method_call" ]
+  Exclude:
+    - "**/db/migrate/**/*"
+
+Metrics/CollectionLiteralLength:
+  Enabled: true
+
+Metrics/CyclomaticComplexity:
+  Enabled: true
+
+Metrics/MethodLength:
+  Enabled: true
+  CountAsOne: [ "array", "hash", "heredoc", "method_call" ]
+  Exclude:
+    - "**/db/migrate/**/*"
+
+Metrics/ModuleLength:
+  Enabled: true
+  CountAsOne: [ "array", "hash", "heredoc", "method_call" ]
+
+Metrics/ParameterLists:
+  Enabled: true
+  CountKeywordArgs: false
+
+Metrics/PerceivedComplexity:
+  Enabled: true
+
+# --- Disabled ----------------------------------------------------------------
+# (none)
+
+# =============================================================================
+# Style
+# =============================================================================
+
+# --- Enabled -----------------------------------------------------------------
+
+# Project: no endless methods (`def foo = bar`); always `def foo ... end`,
+# even for one-liners. Autocorrectable with `bin/rubocop -a`.
+Style/EndlessMethod:
+  Enabled: true
+  EnforcedStyle: disallow
+
+# Project: class methods live in `class << self`, never `def self.method`.
+Style/ClassMethodsDefinitions:
+  Enabled: true
+  EnforcedStyle: self_class
+
+# Project: empty (blank) methods stay on one line: `def call(_event); end`.
+# Methods with a body always use `def ... end` over several lines.
+Style/SingleLineMethods:
+  Enabled: true
+  AllowIfMethodIsEmpty: true
+
+Style/EmptyMethod:
+  Enabled: true
+  EnforcedStyle: compact
+
+# Omakase: `def foo(bar)` not `def foo bar`
+Style/MethodDefParentheses:
+  Enabled: true
+
+# Standard: `"foo"` not `%q(foo)` when no escaping is needed.
+Style/RedundantPercentQ:
+  Enabled: true
+
+# Standard: `return a, b` is still redundant at the end of a method.
+Style/RedundantReturn:
+  AllowMultipleReturnValues: false
+
+# Standard: one statement per line.
+Style/Semicolon:
+  AllowAsExpressionSeparator: false
+
+# --- Disabled ----------------------------------------------------------------
+
+# Omakase: low-precedence `and`/`or` allowed for control flow (`save or raise`).
+Style/AndOr:
+  Enabled: false
+
+# =============================================================================
+# RSpec
+# =============================================================================
+# rubocop-rspec defaults (Standard has no RSpec set), relaxed where noisy.
+
+# --- Enabled -----------------------------------------------------------------
+
+# End-to-end scenario specs (spec/integration) describe behaviors, not a class.
+RSpec/DescribeClass:
+  Exclude:
+    - "**/spec/integration/**/*"
+
+RSpec/ExampleLength:
+  Max: 15
+
+RSpec/MultipleExpectations:
+  Max: 5
+
+RSpec/NestedGroups:
+  Max: 4
+
+# --- Disabled ----------------------------------------------------------------
+# (none)

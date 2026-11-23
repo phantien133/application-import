@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1
+# Development image used by compose.yaml. Source code is bind-mounted and gems
+# live in a named volume, so this image only carries system packages.
+# Production image: see Dockerfile.
+
+# Make sure RUBY_VERSION matches the Ruby version in .ruby-version
+ARG RUBY_VERSION=3.4.13
+FROM docker.io/library/ruby:$RUBY_VERSION-slim
+
+WORKDIR /rails
+
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y \
+      build-essential curl git libjemalloc2 libpq-dev libvips libyaml-dev pkg-config postgresql-client && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+ENV BUNDLE_PATH="/usr/local/bundle" \
+    BUNDLE_JOBS="4" \
+    BOOTSNAP_CACHE_DIR="/usr/local/bundle/_bootsnap" \
+    PIDFILE="/tmp/server.pid"
+
+# Pre-install gems into the image layer; the bundle volume is seeded from it
+# on first run and `bundle install` in the entrypoint keeps it in sync.
+COPY Gemfile Gemfile.lock .ruby-version ./
+RUN bundle install
+
+ENTRYPOINT ["/rails/bin/docker-dev-entrypoint"]
+CMD ["./bin/dev"]

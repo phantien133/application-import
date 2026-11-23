@@ -1,0 +1,47 @@
+{
+  "extraKnownMarketplaces": {
+    "dotclaude": {
+      "source": {
+        "source": "github",
+        "repo": "phantien133/dotclaude"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "rails-api@dotclaude": true
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/suggest-compact.js\"" }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/pre-bash-commit-quality.js\"" },
+          { "type": "command", "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/block-no-verify.js\"" }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/pre-compact.js\"" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/desktop-notify.js\"" },
+          { "type": "command", "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/cost-tracker.js\"" }
+        ]
+      }
+    ]
+  }
+}

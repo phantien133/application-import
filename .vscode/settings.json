@@ -1,0 +1,70 @@
+{
+  // Ruby: Ruby LSP formats and lints through the bundled RuboCop, so the editor
+  // follows the same .rubocop.yml (Omakase + Standard + rails/rspec/performance
+  // plugins) as `bin/rubocop` and CI. Do not switch to "standard": the
+  // standard addon ignores .rubocop.yml and its spacing style conflicts with ours.
+  "[ruby]": {
+    "editor.defaultFormatter": "Shopify.ruby-lsp",
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.semanticHighlighting.enabled": true
+  },
+  "rubyLsp.formatter": "rubocop",
+  "rubyLsp.linters": ["rubocop"],
+  "rubyLsp.rubyVersionManager": {
+    "identifier": "rbenv"
+  },
+
+  // Mirrors Layout/TrailingWhitespace, Layout/TrailingEmptyLines,
+  // Layout/IndentationStyle (spaces, width 2) for every file type.
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "files.eol": "\n",
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.detectIndentation": false,
+
+  // Markdown uses trailing double spaces for line breaks.
+  "[markdown]": {
+    "files.trimTrailingWhitespace": false
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml",
+    "editor.formatOnSave": false
+  },
+  "[github-actions-workflow]": {
+    "editor.formatOnSave": false
+  },
+
+  "files.associations": {
+    "*.html.erb": "erb",
+    "Gemfile": "ruby",
+    "*.rake": "ruby",
+    "config.ru": "ruby"
+  },
+  "emmet.includeLanguages": {
+    "erb": "html"
+  },
+
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/log/**": true,
+    "**/tmp/**": true,
+    "**/storage/**": true,
+    "**/node_modules/**": true,
+    "**/vendor/bundle/**": true,
+    "**/public/assets/**": true
+  },
+  "search.exclude": {
+    "**/log": true,
+    "**/tmp": true,
+    "**/storage": true,
+    "**/node_modules": true,
+    "**/vendor/bundle": true,
+    "**/public/assets": true,
+    "**/Gemfile.lock": true
+  }
+}

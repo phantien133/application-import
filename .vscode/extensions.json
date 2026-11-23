@@ -1,0 +1,21 @@
+{
+  "recommendations": [
+    // Ruby LSP: completion, navigation, RuboCop format/lint (+ Rails addon auto-loaded)
+    "Shopify.ruby-lsp",
+    // YAML schema validation for config/*.yml, CI and Kamal deploy files
+    "redhat.vscode-yaml",
+    // GitHub Actions workflow validation
+    "github.vscode-github-actions",
+    // .env file syntax
+    "mikestead.dotenv",
+    // Dockerfile / Kamal
+    "ms-azuretools.vscode-docker"
+  ],
+  "unwantedRecommendations": [
+    // Conflict with Ruby LSP (duplicate diagnostics / formatter fights)
+    "rebornix.ruby",
+    "wingrunr21.vscode-ruby",
+    "misogi.ruby-rubocop",
+    "testdouble.vscode-standard-ruby"
+  ]
+}

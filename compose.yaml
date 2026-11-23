@@ -1,0 +1,74 @@
+# Development stack. Configure ports and project name in .env (see .env.example).
+#
+#   docker compose up -d db redis   # services only, run Rails on the host (bin/dev)
+#   docker compose up               # everything, Rails in the `web` container
+#   docker compose run --rm web bin/rails console
+#
+# Defaults are each service's standard port (3000 / 5432 / 6379). .env overrides
+# the host side with a per-project prefix (e.g. 13000 / 15432 / 16379), and all
+# resources are prefixed with COMPOSE_PROJECT_NAME, so several projects can run
+# at the same time.
+
+name: ${COMPOSE_PROJECT_NAME:-dwf}
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: ${COMPOSE_PROJECT_NAME:-dwf}-web-dev
+    command: ./bin/dev -b 0.0.0.0
+    ports:
+      # Same port inside and outside, so generated URLs (mailer, redirects) match.
+      - "${DWF_BIND_HOST:-127.0.0.1}:${DWF_RAILS_PORT:-3000}:${DWF_RAILS_PORT:-3000}"
+    environment:
+      PORT: ${DWF_RAILS_PORT:-3000}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      REDIS_URL: redis://redis:6379/0
+      RAILS_MAX_THREADS: ${RAILS_MAX_THREADS:-5}
+    volumes:
+      - .:/rails
+      - bundle:/usr/local/bundle
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "${DWF_BIND_HOST:-127.0.0.1}:${DWF_DB_PORT:-5432}:5432"
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "${DWF_BIND_HOST:-127.0.0.1}:${DWF_REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  bundle:
+  postgres:
+  redis:

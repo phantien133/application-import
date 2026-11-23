@@ -1,0 +1,47 @@
+# RuboCop configuration
+#
+# Layers (later wins):
+#   - RuboCop Default       - implicit base shipped with rubocop and each plugin
+#   - rubocop-rails-omakase - Rails house style (spacing, quotes); disables
+#                             most departments
+#   - StandardRB            - explicit setting for every core cop
+#   - standard-performance  - curated Performance cops
+#   - standard-rails        - curated Rails cops
+#   - rubocop-rspec         - plugin defaults (Standard has no RSpec set)
+#   - .rubocop.custom.yml   - ALL project customizations (enable / disable /
+#                             tuning, grouped by department)
+#
+# This file only wires up the layers and global settings. Add or change cop
+# rules in .rubocop.custom.yml, not here.
+
+plugins:
+  - rubocop-performance
+  - rubocop-rails
+  - rubocop-rspec
+
+inherit_gem:
+  rubocop-rails-omakase: rubocop.yml
+  standard: config/ruby-3.4.yml
+  standard-performance: config/base.yml
+  standard-rails: config/base.yml
+
+inherit_from:
+  - .rubocop.custom.yml
+
+inherit_mode:
+  merge:
+    - Exclude
+
+AllCops:
+  TargetRubyVersion: 3.4
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - "bin/**/*"
+    - "db/*schema.rb"
+    - "node_modules/**/*"
+    - "tmp/**/*"
+    - "vendor/**/*"
+    - "gems/*/spec/dummy/db/schema.rb"
+    - "gems/*/spec/dummy/log/**/*"
+    - "gems/*/spec/dummy/tmp/**/*"

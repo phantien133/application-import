@@ -1,0 +1,15 @@
+#!/bin/bash -e
+# Entrypoint for the development container (Dockerfile.dev / compose.yaml).
+
+# Keep the bundle volume in sync with Gemfile.lock.
+bundle check >/dev/null || bundle install
+
+# Prepare the database when starting the server.
+if [ "$1" == "./bin/dev" ] || { [ "$1" == "./bin/rails" ] && [ "$2" == "server" ]; }; then
+  ./bin/rails db:prepare
+fi
+
+# Remove a stale pid left by an unclean shutdown.
+rm -f "${PIDFILE:-tmp/pids/server.pid}"
+
+exec "$@"
