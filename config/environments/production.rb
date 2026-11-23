@@ -19,13 +19,15 @@ Rails.application.configure do
   config.active_storage.service = :local
 
   # Assume all access to the app is happening through a SSL-terminating reverse proxy.
-  # config.assume_ssl = true
+  # Disable with ASSUME_SSL=false / FORCE_SSL=false only when TLS is not terminated upstream (e.g. local smoke test).
+  config.assume_ssl = ENV.fetch("ASSUME_SSL", "true") == "true"
 
   # Force all access to the app over SSL, use Strict-Transport-Security, and use secure cookies.
-  # config.force_ssl = true
+  config.force_ssl = ENV.fetch("FORCE_SSL", "true") == "true"
 
-  # Skip http-to-https redirect for the default health check endpoint.
-  # config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/up" } } }
+  # Skip http-to-https redirect for the health check endpoints.
+  health_check_paths = %w[ /up /health ].freeze
+  config.ssl_options = { redirect: { exclude: ->(request) { health_check_paths.include?(request.path) } } }
 
   # Log to STDOUT with the current request id as a default log tag.
   config.log_tags = [ :request_id ]
@@ -40,7 +42,11 @@ Rails.application.configure do
   # Don't log any deprecations.
   config.active_support.report_deprecations = false
 
-  # Rails.cache uses Redis (see config/application.rb); set REDIS_CACHE_URL or REDIS_URL.
+  # Rails.cache uses Redis (see config/application.rb). Fail at boot instead of silently
+  # missing every cache read against localhost. SECRET_KEY_BASE_DUMMY marks build-time boots.
+  if ENV["REDIS_CACHE_URL"].blank? && ENV["REDIS_URL"].blank? && ENV["SECRET_KEY_BASE_DUMMY"].blank?
+    raise "Set REDIS_CACHE_URL or REDIS_URL for Rails.cache in production"
+  end
 
   # Replace the default in-process and non-durable queuing backend for Active Job.
   config.active_job.queue_adapter = :solid_queue
@@ -50,8 +56,11 @@ Rails.application.configure do
   # Set this to true and configure the email server for immediate delivery to raise delivery errors.
   # config.action_mailer.raise_delivery_errors = false
 
+  # Allowed hosts, comma-separated (e.g. "api.example.com,.example.com"); see config/deploy.yml.
+  app_hosts = ENV.fetch("APP_HOSTS", "").split(",").map(&:strip).reject(&:empty?)
+
   # Set host to be used by links generated in mailer templates.
-  config.action_mailer.default_url_options = { host: "example.com" }
+  config.action_mailer.default_url_options = { host: app_hosts.first&.delete_prefix("."), protocol: "https" }
 
   # Specify outgoing SMTP server. Remember to add smtp/* credentials via bin/rails credentials:edit.
   # config.action_mailer.smtp_settings = {
@@ -73,11 +82,10 @@ Rails.application.configure do
   config.active_record.attributes_for_inspect = [ :id ]
 
   # Enable DNS rebinding protection and other `Host` header attacks.
-  # config.hosts = [
-  #   "example.com",     # Allow requests from example.com
-  #   /.*\.example\.com/ # Allow requests from subdomains like `www.example.com`
-  # ]
-  #
-  # Skip DNS rebinding protection for the default health check endpoint.
-  # config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
+  # A leading dot allows subdomains (".example.com"). Unset APP_HOSTS disables the check.
+  if app_hosts.any?
+    config.hosts = app_hosts
+    # Skip DNS rebinding protection for the health check endpoints (load balancers use IPs).
+    config.host_authorization = { exclude: ->(request) { health_check_paths.include?(request.path) } }
+  end
 end

@@ -94,8 +94,8 @@ production:
   primary: &primary_production
     <<: *default
     database: import_demo_production
-    username: import_demo
-    password: <%= ENV["IMPORT_DEMO_DATABASE_PASSWORD"] %>
+    # host/port/username/password come from DB_HOST, DB_PORT, DB_USERNAME and
+    # DB_PASSWORD (see &default), set in config/deploy.yml and .kamal/secrets.
   queue:
     <<: *primary_production
     database: import_demo_production_queue

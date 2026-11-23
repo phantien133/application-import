@@ -1,6 +1,6 @@
 # JSON envelope shared by every API controller.
 #
-#   success: { "data": ..., "meta": ... }
+#   success: { "data": ..., "meta": ... }   ("data" always present, "meta" only when given)
 #   error:   { "error": { "code": ..., "message": ..., "details": ... } }
 module ApiResponse
   extend ActiveSupport::Concern
@@ -8,7 +8,9 @@ module ApiResponse
   private
 
   def render_success(data = nil, status: :ok, meta: nil)
-    render json: { data:, meta: }.compact, status:
+    body = { data: }
+    body[:meta] = meta unless meta.nil?
+    render json: body, status:
   end
 
   def render_error(code:, message:, status:, details: nil)

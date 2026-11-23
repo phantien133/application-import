@@ -1,7 +1,8 @@
 #!/bin/bash -e
 
-# If running the rails server then create or migrate existing database
-if [ "${@: -2:1}" == "./bin/rails" ] && [ "${@: -1:1}" == "server" ]; then
+# If running the rails server then create or migrate existing database.
+# Set SKIP_DB_PREPARE=true when several servers boot at once (see config/deploy.yml).
+if [ "${SKIP_DB_PREPARE}" != "true" ] && [ "${@: -2:1}" == "./bin/rails" ] && [ "${@: -1:1}" == "server" ]; then
   ./bin/rails db:prepare
 fi
 

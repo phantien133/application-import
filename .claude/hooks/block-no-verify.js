@@ -394,7 +394,8 @@ function hasNoVerifyFlag(input, command, offset) {
       }
     }
 
-    if (value === '--no-verify') return true;
+    // Git accepts unambiguous long-option prefixes (--no-v, --no-ver, ...).
+    if (value.startsWith('--no-v') && '--no-verify'.startsWith(value)) return true;
 
     // For commit, -n is shorthand for --no-verify.
     if (command === 'commit' && isCommitNoVerifyShortFlag(value)) {
@@ -409,6 +410,12 @@ function hasNoVerifyFlag(input, command, offset) {
  * Check if the input contains a -c core.hooksPath= override.
  */
 function hasHooksPathOverride(input, detected) {
+  // Any mention of core.hooksPath or GIT_CONFIG_* (env-injected config) in the
+  // command is treated as an override attempt, wherever it appears.
+  if (/core\.hookspath/i.test(input) || /\bGIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+|PARAMETERS|GLOBAL|SYSTEM)\b/.test(input)) {
+    return true;
+  }
+
   const tokens = tokenizeShellWords(input, detected.gitEnd, detected.commandStart);
 
   for (let i = 0; i < tokens.length; i++) {

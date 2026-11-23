@@ -1,8 +1,7 @@
 # Maps exceptions to JSON error responses (see ApiResponse).
 #
-# Framework errors (every ActiveRecord::ActiveRecordError, plus
-# ActionController::ParameterMissing) share one handler instead of one handler
-# per class:
+# Every non-ApplicationError exception goes through one handler instead of one
+# handler per class:
 #   - status:  Rails' own mapping, config.action_dispatch.rescue_responses
 #              (RecordNotFound => 404, RecordInvalid => 422, StaleObjectError => 409, ...)
 #   - code:    the exception class name, e.g. :record_not_found, :record_invalid
@@ -19,18 +18,24 @@ module ErrorHandling
   include ApiResponse
 
   included do
-    rescue_from StandardError, with: :handle_unexpected_error
-    rescue_from ApplicationError, with: :render_application_error
-    rescue_from ActiveRecord::ActiveRecordError, ActionController::ParameterMissing, with: :handle_framework_error
+    rescue_from StandardError, with: :handle_framework_error
+    rescue_from ApplicationError, with: :handle_application_error
   end
 
   private
 
+  # ApplicationError with a 5xx status is a server fault: report it (with the
+  # wrapped origin when there is one) before rendering.
+  def handle_application_error(error)
+    Rails.error.report(error.origin_error || error, handled: true) if server_error?(error.status)
+    render_application_error(error)
+  end
+
   def handle_framework_error(error)
     status = framework_status_for(error)
-    return handle_unexpected_error(error) if Rack::Utils.status_code(status) >= 500
+    return handle_unexpected_error(error) if server_error?(status)
 
-    code = error.class.name.demodulize.underscore.to_sym
+    code = (error.class.name || "client_error").demodulize.underscore.to_sym
     render_application_error(ClientError.new(origin_error: error, code:, status:))
   end
 
@@ -43,11 +48,15 @@ module ErrorHandling
 
   # Unknown errors: keep Rails' debug page in development, otherwise report the
   # original exception and answer with a generic 500 that leaks no internals
-  # (explicit message wins over origin_error.message).
+  # (UnexpectedError never exposes origin_error.message).
   def handle_unexpected_error(error)
     raise error if Rails.env.development?
 
     Rails.error.report(error, handled: true)
-    render_application_error(UnexpectedError.new("Internal server error", origin_error: error))
+    render_application_error(UnexpectedError.new(origin_error: error))
+  end
+
+  def server_error?(status)
+    Rack::Utils.status_code(status) >= 500
   end
 end

@@ -66,10 +66,19 @@ RSpec.describe ErrorHandling, type: :controller do
 
     it "treats unmapped ActiveRecord errors as 500 without leaking SQL" do
       allow(Rails.error).to receive(:report)
-      request_raising(ActiveRecord::StatementInvalid.new("PG::UndefinedTable: ERROR: relation \"secrets\" does not exist"))
+      error = ActiveRecord::StatementInvalid.new("PG::UndefinedTable: ERROR: relation \"secrets\" does not exist")
+      request_raising(error)
 
       expect(response).to have_http_status(:internal_server_error)
       expect(json).to eq(error: { code: "unexpected_error", message: "Internal server error" })
+      expect(Rails.error).to have_received(:report).with(error, handled: true)
+    end
+
+    it "maps non-ActiveRecord classes Rails knows, e.g. ActionController::UnknownFormat to 406" do
+      request_raising(ActionController::UnknownFormat.new("format not supported"))
+
+      expect(response).to have_http_status(:not_acceptable)
+      expect(json).to eq(error: { code: "unknown_format", message: "format not supported" })
     end
   end
 
@@ -88,12 +97,13 @@ RSpec.describe ErrorHandling, type: :controller do
     # rescue_from searches bottom-up: StandardError must be declared first or it
     # would swallow every ApplicationError and framework error.
     {
-      ForbiddenError.new => :render_application_error,
-      ClientError.new => :render_application_error,
+      ForbiddenError.new => :handle_application_error,
+      ClientError.new => :handle_application_error,
+      UnexpectedError.new => :handle_application_error,
       ActiveRecord::RecordNotFound.new => :handle_framework_error,
       ActiveRecord::StatementInvalid.new => :handle_framework_error,
       ActionController::ParameterMissing.new(:id) => :handle_framework_error,
-      RuntimeError.new => :handle_unexpected_error
+      RuntimeError.new => :handle_framework_error
     }.each do |error, handler|
       it "routes #{error.class} to #{handler}" do
         expect(controller.handler_for_rescue(error).name).to eq(handler)
@@ -121,13 +131,27 @@ RSpec.describe ErrorHandling, type: :controller do
       expect(json).to eq(error: { code: "definition_not_found", message: "Definition apply not found" })
     end
 
-    it "honors extra mappings added to config.action_dispatch.rescue_responses" do
-      mappings = ActionDispatch::ExceptionWrapper.rescue_responses.merge("ActiveRecord::RecordNotUnique" => :conflict)
+    it "honors extra mappings added to config.action_dispatch.rescue_responses for any error class" do
+      stub_const("Payments::Declined", Class.new(StandardError))
+      mappings = ActionDispatch::ExceptionWrapper.rescue_responses.merge("Payments::Declined" => :payment_required)
       allow(ActionDispatch::ExceptionWrapper).to receive(:rescue_responses).and_return(mappings)
-      request_raising(ActiveRecord::RecordNotUnique.new("duplicate"))
+      request_raising(Payments::Declined.new("card declined"))
 
-      expect(response).to have_http_status(:conflict)
-      expect(json[:error]).to eq(code: "record_not_unique", message: "duplicate")
+      expect(response).to have_http_status(:payment_required)
+      expect(json[:error]).to eq(code: "declined", message: "card declined")
+    end
+
+    it "reports and hides errors that rescue_responses maps to 5xx" do
+      stub_const("Upstream::Down", Class.new(StandardError))
+      mappings = ActionDispatch::ExceptionWrapper.rescue_responses.merge("Upstream::Down" => :service_unavailable)
+      allow(ActionDispatch::ExceptionWrapper).to receive(:rescue_responses).and_return(mappings)
+      allow(Rails.error).to receive(:report)
+      error = Upstream::Down.new("upstream at 10.0.0.9 is down")
+      request_raising(error)
+
+      expect(response).to have_http_status(:internal_server_error)
+      expect(json).to eq(error: { code: "unexpected_error", message: "Internal server error" })
+      expect(Rails.error).to have_received(:report).with(error, handled: true)
     end
   end
 
@@ -138,10 +162,36 @@ RSpec.describe ErrorHandling, type: :controller do
       expect(response).to have_http_status(:bad_request)
       expect(json).to eq(error: { code: "invalid_date", message: "invalid date" })
     end
+
+    it "does not report 4xx ApplicationErrors" do
+      allow(Rails.error).to receive(:report)
+      request_raising(ClientError.new("bad"))
+
+      expect(Rails.error).not_to have_received(:report)
+    end
+
+    it "hides the origin message of an UnexpectedError and reports the origin" do
+      allow(Rails.error).to receive(:report)
+      origin = RuntimeError.new("connection to db.internal:5432 refused")
+      request_raising(UnexpectedError.new(origin_error: origin))
+
+      expect(response).to have_http_status(:internal_server_error)
+      expect(json).to eq(error: { code: "unexpected_error", message: "Internal server error" })
+      expect(Rails.error).to have_received(:report).with(origin, handled: true)
+    end
+
+    it "reports a 5xx ApplicationError without origin" do
+      allow(Rails.error).to receive(:report)
+      error = ApplicationError.new("storage quota exceeded", status: :insufficient_storage)
+      request_raising(error)
+
+      expect(response).to have_http_status(:insufficient_storage)
+      expect(Rails.error).to have_received(:report).with(error, handled: true)
+    end
   end
 
   describe "unexpected errors" do
-    it "reports and hides framework errors that Rails maps to 5xx" do
+    it "reports and hides unmapped ActiveRecord errors such as ConnectionNotEstablished" do
       allow(Rails.error).to receive(:report)
       error = ActiveRecord::ConnectionNotEstablished.new("could not connect to server at 10.0.0.5")
       request_raising(error)

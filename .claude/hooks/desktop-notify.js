@@ -67,16 +67,28 @@ function findPowerShell() {
  * reason is null on success, or contains error detail on failure.
  */
 function notifyWindows(pwshPath, title, body) {
-  const safeBody = body.replace(/'/g, "''");
-  const safeTitle = title.replace(/'/g, "''");
-  const command = `Import-Module BurntToast; New-BurntToastNotification -Text '${safeTitle}', '${safeBody}'`;
-  const result = spawnSync(pwshPath, ['-Command', command],
-    { stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000 });
+  // Pass text through environment variables, never interpolated into -Command:
+  // PowerShell treats several Unicode quote characters as string delimiters,
+  // so escaping ASCII ' alone allows command injection from message text.
+  const command = 'Import-Module BurntToast; New-BurntToastNotification -Text $env:CC_NOTIFY_TITLE, $env:CC_NOTIFY_BODY';
+  const result = spawnSync(pwshPath, ['-NoProfile', '-Command', command], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 5000,
+    env: { ...process.env, CC_NOTIFY_TITLE: stripControlChars(title), CC_NOTIFY_BODY: stripControlChars(body) }
+  });
   if (result.status === 0) {
     return { success: true, reason: null };
   }
   const errorMsg = result.error ? result.error.message : result.stderr?.toString();
   return { success: false, reason: errorMsg || `exit ${result.status}` };
+}
+
+/**
+ * Remove ASCII control characters (incl. \r, \n, \t) that could break out of
+ * a single-line script string.
+ */
+function stripControlChars(text) {
+  return String(text).replace(/[\x00-\x1f\x7f]/g, ' ');
 }
 
 /**
@@ -104,8 +116,8 @@ function extractSummary(message) {
  * double quotes with curly quotes and strip backslashes before embedding.
  */
 function notifyMacOS(title, body) {
-  const safeBody = body.replace(/\\/g, '').replace(/"/g, '\u201C');
-  const safeTitle = title.replace(/\\/g, '').replace(/"/g, '\u201C');
+  const safeBody = stripControlChars(body).replace(/\\/g, '').replace(/"/g, '\u201C');
+  const safeTitle = stripControlChars(title).replace(/\\/g, '').replace(/"/g, '\u201C');
   const script = `display notification "${safeBody}" with title "${safeTitle}"`;
   const result = spawnSync('osascript', ['-e', script], { stdio: 'ignore', timeout: 5000 });
   if (result.error || result.status !== 0) {

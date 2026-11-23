@@ -8,8 +8,8 @@ require "active_record/railtie"
 require "active_storage/engine"
 require "action_controller/railtie"
 require "action_mailer/railtie"
-require "action_mailbox/engine"
-require "action_text/engine"
+# require "action_mailbox/engine"
+# require "action_text/engine"
 require "action_view/railtie"
 require "action_cable/engine"
 
@@ -39,6 +39,10 @@ module ImportDemo
     # Middleware like session, flash, cookies can be added back manually.
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
+
+    # Errors raised outside controller actions (routing, body parsing) render the
+    # same JSON envelope as ErrorHandling instead of Rails' default error body.
+    config.exceptions_app = ->(env) { ErrorsController.action(:show).call(env) }
 
     # Rails.cache backed by Redis (development and production).
     # REDIS_CACHE_URL wins over REDIS_URL so cache can live on its own instance/db.

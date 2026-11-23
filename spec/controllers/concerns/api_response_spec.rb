@@ -27,10 +27,10 @@ RSpec.describe ApiResponse, type: :controller do
     expect(json).to eq(data: [ { id: 1 } ], meta: { page: 1 })
   end
 
-  it "omits nil keys" do
+  it "always includes data and omits meta when not given" do
     get :show, params: { id: 1 }
 
-    expect(json).to eq({})
+    expect(json).to eq(data: nil)
   end
 
   it "uses the given status" do

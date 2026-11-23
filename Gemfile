@@ -32,8 +32,8 @@ gem "thruster", require: false
 # Use Rack CORS for handling Cross-Origin Resource Sharing (CORS), making cross-origin Ajax possible
 # gem "rack-cors"
 
-# Use Active Storage variants [https://guides.rubyonrails.org/active_storage_overview.html#transforming-images]
-gem "image_processing", "~> 1.2"
+# Bulk insert/upsert of Active Record models [https://github.com/zdennis/activerecord-import]
+gem "activerecord-import", "~> 3.0"
 
 group :development, :test do
   # Load .env into ENV [https://github.com/bkeepers/dotenv]

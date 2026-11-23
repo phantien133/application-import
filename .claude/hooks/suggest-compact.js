@@ -16,8 +16,8 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  getTempDir,
-  writeFile,
+  getClaudeDir,
+  ensureDir,
   log
 } = require('./lib/utils');
 
@@ -26,7 +26,12 @@ async function main() {
   // Use a session-specific counter file based on session ID from environment
   // or parent PID as fallback
   const sessionId = (process.env.CLAUDE_SESSION_ID || 'default').replace(/[^a-zA-Z0-9_-]/g, '') || 'default';
-  const counterFile = path.join(getTempDir(), `claude-tool-count-${sessionId}`);
+  // Keep the counter in a private directory under ~/.claude, not the shared
+  // system temp dir where another user could plant a symlink at a predictable path.
+  const counterDir = path.join(getClaudeDir(), 'tmp');
+  ensureDir(counterDir);
+  try { fs.chmodSync(counterDir, 0o700); } catch { /* best effort */ }
+  const counterFile = path.join(counterDir, `claude-tool-count-${sessionId}`);
   const rawThreshold = parseInt(process.env.COMPACT_THRESHOLD || '50', 10);
   const threshold = Number.isFinite(rawThreshold) && rawThreshold > 0 && rawThreshold <= 10000
     ? rawThreshold
@@ -38,7 +43,9 @@ async function main() {
   // Use fd-based read+write to reduce (but not eliminate) race window
   // between concurrent hook invocations
   try {
-    const fd = fs.openSync(counterFile, 'a+');
+    // O_NOFOLLOW: never follow a symlink planted at the counter path.
+    const flags = fs.constants.O_RDWR | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW || 0);
+    const fd = fs.openSync(counterFile, flags, 0o600);
     try {
       const buf = Buffer.alloc(64);
       const bytesRead = fs.readSync(fd, buf, 0, 64, 0);
@@ -57,8 +64,7 @@ async function main() {
       fs.closeSync(fd);
     }
   } catch {
-    // Fallback: just use writeFile if fd operations fail
-    writeFile(counterFile, String(count));
+    // Counter is best effort: on failure (e.g. symlink refused) keep count = 1.
   }
 
   // Suggest compact after threshold tool calls
