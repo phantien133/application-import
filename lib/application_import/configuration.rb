@@ -34,6 +34,9 @@ module ApplicationImport
 
     # Relative paths resolve against Rails.root.
     def config_path=(path)
+      valid = (path.is_a?(String) || path.is_a?(Pathname)) && path.to_s.strip.present?
+      raise Errors::ConfigError, "config_path must be a non-empty path, got #{path.inspect}" unless valid
+
       @config_path = Rails.root.join(path.to_s)
     end
 
@@ -78,7 +81,9 @@ module ApplicationImport
     def with_defaults(config)
       return config if defaults.empty? || !config.is_a?(Hash)
 
-      defaults.deep_merge(config.deep_stringify_keys)
+      # An empty section (`file:` with nothing under it) is "not set", not "no defaults".
+      config = config.deep_stringify_keys.reject { |key, value| DEFAULT_KEYS.include?(key) && value.nil? }
+      defaults.deep_merge(config)
     end
 
     private

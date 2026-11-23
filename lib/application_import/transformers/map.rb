@@ -6,14 +6,15 @@ module ApplicationImport
     #   to: role_code          (default: the attribute itself)
     #   case_sensitive: false  (default; surrounding spaces ignored too)
     #   strict: false          (true: a value not in the table -> row error not_mapped)
-    # Blank values are left alone.
+    # Blank values are left alone. With `to` another attribute, it is always set (nil
+    # when the value is blank or not in the table), so later checks can rely on the key.
     class Map < Base
       def call(attributes, row)
         key = options[:attribute]
         value = attributes[key]
-        return if value.blank?
+        return unmapped(key) if value.blank?
 
-        found = table.fetch(normalize(value)) { return not_found(row, key, value) }
+        found = table.fetch(normalize(value)) { return not_found(row, key, value) || unmapped(key) }
         { options.fetch(:to, key) => found }
       end
 
@@ -26,6 +27,11 @@ module ApplicationImport
       def normalize(value)
         text = value.to_s.strip
         options[:case_sensitive] ? text : text.downcase
+      end
+
+      def unmapped(key)
+        to = options.fetch(:to, key)
+        { to => nil } unless to == key
       end
 
       def not_found(row, key, value)

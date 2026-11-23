@@ -38,13 +38,15 @@ module ApplicationImport
       end
 
       def process_row(raw)
-        row = build_row(raw)
+        row = @current_row = build_row(raw)
         row_checks(row).each do |check|
           check.call
           break if stop_row?(row)
         end
         settle_all(row)
         stream(row) if streaming?
+      ensure
+        @current_row = nil
       end
 
       # row_errors: first stops the row at the first check reporting an error that is
@@ -86,10 +88,14 @@ module ApplicationImport
       # cache: the same Hash the rows checks filled, e.g. keys collected for one query.
       # It may hold data of rows skipped later: filter by `rows` when it matters.
       # Not a step with output.stream: rows are already written.
+      # Errors are settled after each check, so a row skipped by one is not handed to the next.
       def verify
-        kept = rows
-        validators(:verify).each { |validator| guard(validator.class) { validator.call(kept, result, cache) } }
-        guard(handler.class) { handler.verify(kept, result, cache) }
+        validators(:verify).each { |validator| verify_with(validator) { validator.call(rows, result, cache) } }
+        verify_with(handler) { handler.verify(rows, result, cache) }
+      end
+
+      def verify_with(source, &)
+        guard(source.class, &)
         settle_all
       end
 
@@ -101,10 +107,13 @@ module ApplicationImport
         write_batch(streaming? ? unwritten_rows : rows)
       end
 
+      # Row errors raised by handler.write are settled with on_error like any stage.
       def write_batch(batch)
-        written = handler.write(batch, writer)
+        written = 0
+        guard(handler.class) { written = handler.write(batch, writer) }
         result.increment(:written, written)
         batch.each(&:release!) if streaming?
+        settle_all
         halt! if writer.aborted?
       end
 
@@ -118,15 +127,26 @@ module ApplicationImport
       def guard(source = nil)
         yield
       rescue Errors::RowError => e
-        target(e.line, source).add_error(code: e.code, message: e.message, column: e.column)
+        open_rows([ target(e.line, source) ]).each do |row|
+          row.add_error(code: e.code, message: e.message, column: e.column, details: (row.line == e.line) ? nil : { line: e.line })
+        end
       rescue Errors::RowsError => e
         add_rows_error(e, source)
       end
 
       def add_rows_error(error, source)
         details = { lines: error.lines, columns: error.columns }
-        targets = error.lines.map { |line| target(line, source) }
+        targets = open_rows(error.lines.map { |line| target(line, source) })
         targets.each { |row| row.add_error(code: error.code, message: error.message, column: error.columns.first, details:) }
+      end
+
+      # output.stream: a row already written keeps its outcome; an error naming it goes
+      # to the other rows named, or to the row being checked (its details keep the lines).
+      def open_rows(targets)
+        open = targets.reject(&:written?)
+        return open if open.any?
+
+        [ @current_row ].compact.presence || targets
       end
 
       def target(line, source)

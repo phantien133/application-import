@@ -24,7 +24,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
 
     expect(result.except(:columns)).to eq(
       handler: ApplicationImport::Handler,
-      file: { checker: ApplicationImport::FileChecker, formats: nil, name_pattern: nil, max_size: nil,
+      file: { checker: ApplicationImport::FileChecker, formats: nil, name_pattern: nil, max_size: 104_857_600, max_columns: nil,
               format: :csv, reader: nil, encoding: "UTF-8", headers: true, require_all_headers: false, unknown_headers: :skip, extra_cells: :warn, assign: nil, numbers: nil, csv: {}, xlsx: {} },
       transformers: [],
       mapper: nil,
@@ -56,7 +56,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
                                "xlsx" => { "sheet" => "Data" } } })[:file]
 
     expect(file.except(:checker)).to eq(formats: %i[ csv xlsx ], name_pattern: /\Ausers\.csv\z/, max_size: 1,
-      format: :xlsx, reader: nil, encoding: "Shift_JIS", headers: false, require_all_headers: true, unknown_headers: :keep, extra_cells: :reject, assign: nil, numbers: nil, csv: { col_sep: ";" }, xlsx: { sheet: "Data" })
+      format: :xlsx, reader: nil, encoding: "Shift_JIS", headers: false, require_all_headers: true, unknown_headers: :keep, extra_cells: :reject, assign: nil, max_columns: nil, numbers: nil, csv: { col_sep: ";" }, xlsx: { sheet: "Data" })
   end
 
   it "requires file.format to be an allowed format" do

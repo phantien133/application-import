@@ -36,7 +36,7 @@ module ApplicationImport
       when Errors::RowsError then add_rows_exception(error)
       when Errors::RowError
         add_row_error(line: error.line, column: error.column, code: error.code, message: error.message)
-      when Errors::FileError then add_file_error(error.code, error.message)
+      when Errors::FileError then add_file_error(error.code, error.message, details: error.details)
       else raise ArgumentError, "unsupported error: #{error.class}"
       end
     end

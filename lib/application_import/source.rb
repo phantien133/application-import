@@ -24,12 +24,23 @@ module ApplicationImport
         new(filename: filename || path.basename.to_s, path: path.to_s, io: nil)
       end
 
+      def seekable?(file)
+        return false unless file.respond_to?(:rewind) && file.respond_to?(:size)
+        return true unless file.is_a?(IO)
+
+        file.stat.file?
+      rescue IOError, SystemCallError
+        false
+      end
+
       def from_upload(file, filename)
         from_path(Pathname(file.tempfile.path), filename || file.original_filename)
       end
 
+      # The file is read twice (size check, then reading): pipes and sockets cannot be.
       def from_io(file, filename)
         raise ArgumentError, "unsupported import file: #{file.class}" unless file.respond_to?(:read)
+        raise ArgumentError, "import file must be seekable (a file or StringIO), got #{file.class}" unless seekable?(file)
 
         path = file.respond_to?(:path) ? file.path : nil
         name = filename || (path && File.basename(path))
@@ -45,8 +56,9 @@ module ApplicationImport
       super(filename: filename.to_s, path: path&.to_s, io:)
     end
 
+    # NUL bytes (rejected by FileChecker as invalid_name) are ignored here.
     def extension
-      File.extname(filename).delete_prefix(".").downcase
+      File.extname(filename.delete("\0")).delete_prefix(".").downcase
     end
 
     def size

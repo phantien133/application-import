@@ -3,21 +3,23 @@ module ApplicationImport
   #   required             -> required        (nil value)
   #   min_length / max_length (strings) -> too_short / too_long
   #   min / max            -> too_small / too_big (numbers, dates, times)
-  #   format               -> invalid_format  (regexp, or email)
-  #   inclusion            -> not_included    (compared as strings)
+  #   format               -> invalid_format  (regexp, or email; matched on the file text)
+  #   inclusion            -> not_included    (numbers compared as numbers, else as strings)
   # Only required applies to nil.
   # Rules check the value as read from the file (after cast, before transformers and the
   # mapper): they describe the file. Checks on transformed values belong in validators.
   module ColumnRules
     module_function
 
-    def errors(column, value)
+    # raw: the cell as read (format is matched on it, stripped); the cast value otherwise.
+    def errors(column, value, raw: nil)
       return column.required? ? [ [ :required, "#{column.header} is required" ] ] : [] if value.nil?
 
       options = column.options
+      text = raw.is_a?(String) ? raw.strip : value.to_s
       [
         *lengths(column, value, options), *bounds(column, value, options),
-        *format(column, value, options), *inclusion(column, value, options)
+        *format(column, text, options), *inclusion(column, value, options)
       ]
     end
 
@@ -42,17 +44,25 @@ module ApplicationImport
       errors
     end
 
-    def format(column, value, options)
-      return [] if options[:format].nil? || options[:format].match?(value.to_s)
+    def format(column, text, options)
+      return [] if options[:format].nil? || options[:format].match?(text)
 
       [ [ :invalid_format, "#{column.header} has an invalid format" ] ]
     end
 
     def inclusion(column, value, options)
       allowed = options[:inclusion]
-      return [] if allowed.nil? || allowed.map(&:to_s).include?(value.to_s)
+      return [] if allowed.nil? || allowed.any? { |option| same?(option, value) }
 
       [ [ :not_included, "#{column.header} must be one of: #{allowed.join(", ")}" ] ]
+    end
+
+    # 1 and "1.0" match a decimal 1: numbers by value (BigDecimal("1").to_s is "1.0").
+    def same?(option, value)
+      return option.to_s == value.to_s unless value.is_a?(Numeric)
+
+      number = BigDecimal(option.to_s, exception: false)
+      !number.nil? && number == value
     end
   end
 end

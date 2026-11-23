@@ -20,7 +20,7 @@ file:
   checker: Imports::UsersFileChecker   # < ApplicationImport::FileChecker (default: FileChecker)
   formats: [ csv ]                     # allowed extensions -> invalid_format
   name_pattern: '\Ausers_\d{8}\.csv\z' # regexp on the filename -> invalid_name
-  max_size: 10485760                   # bytes -> too_large
+  max_size: 10485760                   # bytes -> too_large (default 100 MiB; null: no check)
 
   # --- Reading ---
   format: csv          # csv (default) | xlsx (reader not implemented yet); must be in formats
@@ -33,7 +33,7 @@ file:
     liberal_parsing: false
     strip: true        # true, or one character to strip, e.g. "*"
     skip_lines: '\A#'  # regexp: lines skipped before parsing (comments)
-    max_field_size: 10000   # default 1048576: an unclosed quote cannot swallow the file
+    max_field_size: 10000   # default 1048576 -> field_too_large (also an unclosed quote)
     # passthrough:     # other CSV.new options, as-is (not validated), applied last;
     #   nil_value: ""  # options the reader manages (headers, converters, skip_lines...) are rejected
   # xlsx:
@@ -55,6 +55,7 @@ file:
   #                            # none: every matching attribute, with a warning at config load
   extra_cells: warn            # cells beyond the headers (kept in row.raw):
                                # warn (default) | ignore | reject (file error, halts)
+  # max_columns: 200           # cells per record -> too_many_cells (default: columns * 2 + 100)
   # numbers:                   # default separators of integer / decimal columns
   #   decimal_separator: ","   # (a column's own separators win); see orders.yml
   #   thousands_separator: "."
@@ -64,10 +65,11 @@ columns:                       # key: snake_case attribute name; options all opt
     header: "Email"            # default: the key
     aliases: [ "E-mail", "Mail" ]
     header_pattern: '\Ae-?mail( address)?\z'   # regexp (or list), case-insensitive; names win
+                               # (headers are matched with Unicode spaces trimmed / squished)
     type: string               # string (default) | integer | decimal | boolean | date | datetime
     required: true             # blank -> required
     max_length: 255
-    format: email              # email, or a regexp
+    format: email              # email, or a regexp (matched on the text in the file)
   name:
     header: "Name"
     min_length: 2
@@ -90,7 +92,7 @@ columns:                       # key: snake_case attribute name; options all opt
   role:
     header: "Role"
     # Column rules check the value as it is in the file, before transformers.
-    inclusion: [ "Quản trị", "Thành viên", admin, member, guest ]
+    inclusion: [ "Quản trị", "Thành viên", admin, member, guest ]   # numbers compare by value
   joined_on:
     header: "Joined"
     type: date
@@ -166,12 +168,16 @@ output:
   mode: bulk                   # bulk (default with model: activerecord-import)
                                # | save (record.save each) | raw (no DB, default without model)
   model: User                  # a concrete ActiveRecord model; required by bulk and save
-  batch_size: 1000             # rows per write call (default 1000)
-  transaction: true            # each write call in a transaction (default true)
-  stream: false                # true: write by batch_size while reading; see products.yml
+  batch_size: 1000             # rows per Model.import call / stream batch (default 1000)
+  transaction: true            # each write call in a transaction (default true; save / bulk)
+  stream: false                # save / bulk, true: write by batch_size while reading; see products.yml
+                               # (a rows error naming an already written line goes to the row checked)
+  # Options with no effect in the mode (e.g. batch_size with raw) are warned about, not errors:
+  # they often come from _config.yml defaults. Database errors that are not a row's fault
+  # (connection lost, timeouts, deadlocks) fail the run instead of becoming not_saved.
   upsert:                      # bulk only -> on_duplicate_key_update
-    conflict_target: [ email ]
-    update: [ name, age, active ]
+    conflict_target: [ email ]   # required (needs a unique index)
+    update: [ name, age, active ] # required
   import:                      # bulk only: validate validate_with_context validate_uniqueness
     validate: true             # timestamps recursive batch_size all_or_none
                                # on_duplicate_key_update / _ignore (not with upsert)

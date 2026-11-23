@@ -10,11 +10,17 @@ module ApplicationImport
     # #on_headers registers a callback called with #headers once known: right after the
     # header row, or before the first record without one (even for an empty file).
     # Blank records (no cell with content) are skipped.
-    # Raises FileError empty_file (no header / no data rows). File size is bounded by
+    # Raises FileError empty_file (no header / no data rows) and too_many_cells (a record
+    # with more cells than file.max_columns, default: columns * 2 + 100; checked as each
+    # record is read, so one oversized record stops the run). File size is bounded by
     # file.max_size (FileChecker), not by a row count.
     class Base
       include Enumerable
       include Logging
+
+      # Whitespace of any script plus zero-width marks (U+200B, U+FEFF), stripped from headers.
+      SPACES = /[[:space:]\u200B\uFEFF]+/
+      EDGE_SPACES = /\A#{SPACES}|#{SPACES}\z/
 
       attr_reader :definition, :source
 
@@ -76,6 +82,7 @@ module ApplicationImport
       def read_rows
         count = 0
         each_record do |line, values|
+          check_width(line, values)
           next if blank?(values) || read_header(values)
 
           count += 1
@@ -87,9 +94,21 @@ module ApplicationImport
       def read_header(values)
         return false unless headers? && @headers.nil?
 
-        @headers = values.map { |value| value.to_s.strip }
+        @headers = values.map { |value| value.to_s.gsub(EDGE_SPACES, "") }
         @on_headers&.call(@headers)
         true
+      end
+
+      def check_width(line, values)
+        max = max_columns
+        return if values.size <= max
+
+        raise Errors::FileError.new("line #{line} has #{values.size} cells, more than the maximum of #{max}",
+          code: :too_many_cells, details: { line:, cells: values.size, max_columns: max })
+      end
+
+      def max_columns
+        @max_columns ||= definition.file[:max_columns] || ((definition.columns.size * 2) + 100)
       end
 
       def blank?(values)

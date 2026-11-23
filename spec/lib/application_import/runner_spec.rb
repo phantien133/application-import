@@ -549,11 +549,11 @@ RSpec.describe ApplicationImport::Runner do
     end
 
     context "when open raises a FileError" do
-      it "halts with it and does not close" do
+      it "halts with it and still closes what open may have acquired" do
         TrackingReader.define_method(:open) { raise ApplicationImport::Errors::FileError.new("corrupt", code: :unreadable) }
 
         expect(runner.call.errors.map(&:code)).to eq([ :unreadable ])
-        expect(events).to eq(%i[ after_import ])
+        expect(events).to eq(%i[ close after_import ])
       end
     end
 

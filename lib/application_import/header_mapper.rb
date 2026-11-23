@@ -36,8 +36,9 @@ module ApplicationImport
     attr_reader :definition
 
     class << self
+      # Unicode spaces (NBSP from spreadsheets, ...) and zero-width marks count as spaces.
       def normalize(header)
-        header.to_s.strip.gsub(/\s+/, " ").downcase
+        header.to_s.gsub(Readers::Base::SPACES, " ").strip.downcase
       end
     end
 

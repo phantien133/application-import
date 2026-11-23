@@ -23,13 +23,28 @@ module ApplicationImport
       end
 
       def import(batch)
-        rows_by_record = batch.to_h { |row| [ record_of(row), row ] }.compare_by_identity
+        rows_by_record = rows_by_record(batch)
         imported = savepoint { model.import(rows_by_record.keys, **import_options) }
-        failed = imported.failed_instances
-        failed.each { |record| fail_record(rows_by_record.fetch(record), record) }
-        written_after(imported, batch, failed)
-      rescue ActiveRecord::ActiveRecordError => e
+        imported.failed_instances.each { |record| fail_record(rows_by_record.fetch(record), record) }
+        written_after(imported, batch, imported.failed_instances)
+      rescue *FATAL_ERRORS
+        raise
+      rescue ActiveModel::RangeError => e
+        out_of_range(batch, e)
+      rescue *ROW_ERRORS => e
         fail_batch(batch, e)
+      end
+
+      # By identity: records compare by id, two new records with the same id would collapse.
+      def rows_by_record(batch)
+        batch.each_with_object({}.compare_by_identity) { |row, map| map[record_of(row)] = row }
+      end
+
+      # Raised before any SQL, for the whole batch: imported row by row to find the culprit.
+      def out_of_range(batch, error)
+        return fail_batch(batch, error) if batch.one?
+
+        batch.sum { |row| aborted? ? 0 : import([ row ]) }
       end
 
       def written_after(imported, batch, failed)

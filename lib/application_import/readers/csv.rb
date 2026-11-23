@@ -10,7 +10,8 @@ module ApplicationImport
     # skip_lines is applied by SkipLines on the raw lines before the parser (not by
     # CSV.new): only lines starting a record, blanked so line numbers stay right.
     # max_field_size defaults to DEFAULT_MAX_FIELD_SIZE (1 MiB characters).
-    # Raises FileError malformed_csv, plus the Base and EncodingGate errors.
+    # Raises FileError malformed_csv, field_too_large (max_field_size), plus the Base and
+    # EncodingGate errors.
     class Csv < Base
       private
 
@@ -30,7 +31,16 @@ module ApplicationImport
           line += lines_in(csv.line)
         end
       rescue ::CSV::MalformedCSVError => e
+        raise field_too_large(e, options) if e.message.start_with?("Field size exceeded")
+
         raise Errors::FileError.new("malformed CSV: #{e.message}", code: :malformed_csv)
+      end
+
+      # A value longer than max_field_size, or an unclosed quote running past it.
+      def field_too_large(error, options)
+        max = options[:max_field_size]
+        Errors::FileError.new("a value on line #{error.line_number} is longer than #{max} characters (or a quote is not closed)",
+          code: :field_too_large, details: { line: error.line_number, max_field_size: max })
       end
 
       # file.csv options, max_field_size defaulting to DEFAULT_MAX_FIELD_SIZE, then the

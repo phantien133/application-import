@@ -41,7 +41,13 @@ module ApplicationImport
     # Written in stream mode: the record is released, the row stays for line lookups.
     def release!
       @record = nil
+      @written = true
       self
+    end
+
+    # Already written by a stream batch: its outcome is final.
+    def written?
+      @written == true
     end
 
     # A skipped row is never written: its record is released (memory); line, raw,

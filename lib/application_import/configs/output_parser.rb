@@ -3,12 +3,12 @@ module ApplicationImport
     # Parses the definition's output section (see Writers).
     #   mode:        raw | save | bulk; default bulk with a model, raw without
     #   model:       ActiveRecord model, required by save and bulk
-    #   batch_size:  rows per activerecord-import call (bulk), default 1000
-    #   transaction: one transaction around each write call (default true)
-    #   stream:      write kept rows by batch_size while reading (default false), then
+    #   batch_size:  rows per activerecord-import call (bulk) / per stream batch, default 1000
+    #   transaction: one transaction around each write call (default true; save / bulk)
+    #   stream:      save / bulk: write kept rows by batch_size while reading (default false), then
     #                release their records; verify cannot be used (rows are written
     #                before it) and a transaction only covers one batch
-    #   upsert:      bulk only: { conflict_target:, update: } (update required) ->
+    #   upsert:      bulk only: { conflict_target:, update: } (both required) ->
     #                on_duplicate_key_update; to skip conflicting rows use
     #                import: { on_duplicate_key_ignore: true }
     #   import:      bulk only: activerecord-import options from IMPORT_OPTIONS (values
@@ -85,14 +85,26 @@ module ApplicationImport
       end
 
       def check_mode_options(mode)
-        %w[ upsert import ].each { |key| only_for(key, :bulk, mode) }
-        only_for("save", :save, mode)
+        %w[ upsert import ].each { |key| only_for(key, %i[ bulk ], mode) }
+        only_for("save", %i[ save ], mode)
+        %w[ transaction stream ].each { |key| warn_unused(key, %i[ save bulk ], mode) }
+        warn_unused("batch_size", %i[ bulk ], mode) unless @output["stream"] == true
         conflicts = mapping(@output["import"], "output.import").keys & %w[ on_duplicate_key_update on_duplicate_key_ignore ]
         add_error("output.import", "#{conflicts.join(", ")} cannot be combined with upsert") if @output.key?("upsert") && conflicts.any?
       end
 
       def only_for(key, allowed, mode)
-        add_error("output.#{key}", "is only used when mode is #{allowed}") if @output.key?(key) && mode && mode != allowed
+        return unless @output.key?(key) && mode && !allowed.include?(mode)
+
+        add_error("output.#{key}", "is only used when mode is #{allowed.join(" or ")}")
+      end
+
+      # A warning, not an error: these often come from _config.yml defaults shared by
+      # definitions of every mode.
+      def warn_unused(key, allowed, mode)
+        return unless @output.key?(key) && mode && !allowed.include?(mode)
+
+        ApplicationImport.logger&.warn("[ApplicationImport] output.#{key} has no effect when mode is #{mode}")
       end
 
       def passthrough(key, allowed)

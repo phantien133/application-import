@@ -39,6 +39,8 @@ module ApplicationImport
     DEFAULT_UNKNOWN_HEADERS = "skip".freeze
     DEFAULT_EXTRA_CELLS = "warn".freeze
     DEFAULT_BATCH_SIZE = 1000
+    # file.max_size when not configured (bytes); `max_size: null` disables the check.
+    DEFAULT_MAX_SIZE = 104_857_600
     # Seconds a regexp from a definition (name_pattern, header_pattern, skip_lines, format)
     # may run on one value: patterns come from config, values from uploaded files.
     REGEXP_TIMEOUT = 1.0

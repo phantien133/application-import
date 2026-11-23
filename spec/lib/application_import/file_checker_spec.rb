@@ -95,8 +95,8 @@ RSpec.describe ApplicationImport::FileChecker do
     expect(check("members.txt", "x" * 101).map(&:first)).to eq(%i[ invalid_format invalid_name too_large ])
   end
 
-  context "when checks are not configured" do
-    let(:file_config) { nil }
+  context "when checks are not configured (max_size: null turns its default off)" do
+    let(:file_config) { { "max_size" => nil } }
 
     it "bypasses them, recording no error" do
       expect(check("anything.whatever", "x" * 1_000)).to eq([])
@@ -111,6 +111,25 @@ RSpec.describe ApplicationImport::FileChecker do
         "WARN [ApplicationImport::FileChecker:users] file.max_size is not configured, skipping the max_size check\n"
       ])
     end
+  end
+
+  it "checks DEFAULT_MAX_SIZE when max_size is absent" do
+    stub_const("ApplicationImport::Constants::DEFAULT_MAX_SIZE", 3)
+    definition = ApplicationImport::Definition.new(:users, { "columns" => { "email" => nil } })
+    result = ApplicationImport::Result.new
+
+    described_class.new(definition, logger: Logger.new(nil)).call(ApplicationImport::Source.new(filename: "a.csv", io: StringIO.new("1234")), result)
+
+    expect(result.errors.map(&:code)).to eq(%i[ too_large ])
+  end
+
+  it "rejects a filename with a NUL byte as invalid_name, without other checks" do
+    result = ApplicationImport::Result.new
+
+    described_class.new(ApplicationImport::Definition.new(:users, { "columns" => { "email" => nil } }), logger: Logger.new(nil))
+      .call(ApplicationImport::Source.new(filename: "a.csv\0.exe", io: StringIO.new("x")), result)
+
+    expect(result.errors.map(&:code)).to eq(%i[ invalid_name ])
   end
 
   context "when only some checks are configured" do

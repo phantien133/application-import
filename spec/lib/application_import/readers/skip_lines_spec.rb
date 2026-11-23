@@ -39,4 +39,15 @@ RSpec.describe ApplicationImport::Readers::SkipLines do
   it "matches the line without its line break" do
     expect(filter("#\nx\n", pattern: /\A#\z/)).to eq("\nx\n")
   end
+
+  it "filters a huge line in linear time and still drops long comment lines" do
+    filter = described_class.new(/\A#/, '"')
+    data = "a,#{"x" * 2_000_000}\n# #{"c" * 200_000}\nb,1\n"
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    output = data.scan(/.{1,65536}/m).map { |chunk| filter.filter(chunk) }.join + filter.flush
+
+    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 1
+    expect(output.lines.map { |line| line[0, 2] }).to eq([ "a,", "\n", "b," ])
+  end
 end

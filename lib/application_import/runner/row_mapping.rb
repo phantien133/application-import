@@ -50,7 +50,7 @@ module ApplicationImport
         key = column.key
         raw = row.attributes[key]
         value = row.attributes[key] = caster.call(column, raw)
-        ColumnRules.errors(column, value).each { |code, message| row.add_error(code:, message:, column: key) }
+        ColumnRules.errors(column, value, raw:).each { |code, message| row.add_error(code:, message:, column: key) }
       rescue Caster::Invalid => e
         row.add_error(code: :invalid_type, message: e.message, column: key, details: { value: raw })
       end

@@ -1,7 +1,8 @@
 module ApplicationImport
   module Writers
     # output.mode save: record.save(**output.save) for each row, in its own savepoint.
-    # A false save (validation) or a database error -> not_saved on the row.
+    # A false save (validation) or a row's database error -> not_saved on the row
+    # (FATAL_ERRORS are raised, see Base).
     class Save < Base
       private
 
@@ -21,7 +22,9 @@ module ApplicationImport
 
         failed(row, record.errors.full_messages.to_sentence, details: { errors: record.errors.details })
         false
-      rescue ActiveRecord::ActiveRecordError => e
+      rescue *FATAL_ERRORS
+        raise
+      rescue *ROW_ERRORS => e
         failed(row, e.message, details: { exception: e.class.name })
         false
       end

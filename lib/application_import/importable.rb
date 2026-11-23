@@ -24,7 +24,10 @@ module ApplicationImport
     extend ActiveSupport::Concern
 
     STATE_KEY = :application_import_importing
-    APPLIED = Concurrent::Map.new
+    # Rules applied per class are kept on the class (APPLIED_IVAR), so a class replaced by
+    # code reloading is collected with them.
+    APPLIED_IVAR = :@application_import_skips
+    LOCK = Mutex.new
 
     class << self
       # Runs the block as the import `name`.
@@ -50,12 +53,19 @@ module ApplicationImport
       # empty). Idempotent: applied once per class, names and imports.
       def skip_validations(klass, names, imports: [])
         rule = { names: names.map(&:to_sym).sort, imports: imports.map(&:to_sym).sort }.freeze
-        APPLIED.compute_if_absent([ klass, rule ]) do
+        LOCK.synchronize do
+          applied = applied_rules(klass)
+          next if applied.include?(rule)
+
           log_skip(klass, rule)
           klass.validators.each { |validator| skip_validator(klass, validator, rule) }
           skip_methods(klass, rule, rule[:names])
-          true
+          applied << rule
         end
+      end
+
+      def applied_rules(klass)
+        klass.instance_variable_get(APPLIED_IVAR) || klass.instance_variable_set(APPLIED_IVAR, Set.new)
       end
 
       def log_skip(klass, rule)

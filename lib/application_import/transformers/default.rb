@@ -6,7 +6,7 @@ module ApplicationImport
     class Default < Base
       def call(attributes, _row)
         key = options[:attribute]
-        { key => options[:value] } if Transformers.missing?(attributes[key])
+        { key => options[:value].deep_dup } if Transformers.missing?(attributes[key])
       end
     end
   end

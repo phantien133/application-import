@@ -2,7 +2,11 @@ RSpec.describe ApplicationImport::Casters::IntegerCaster do
   subject(:caster) { build_caster(type: :integer) }
 
   it "parses base-10 integers, signs, leading zeros and surrounding spaces" do
-    expect([ "42", "-7", "+3", "007", " 12 ", "1_000" ].map { |value| caster.call(value) }).to eq([ 42, -7, 3, 7, 12, 1000 ])
+    expect([ "42", "-7", "+3", "007", " 12 " ].map { |value| caster.call(value) }).to eq([ 42, -7, 3, 7, 12 ])
+  end
+
+  it "rejects underscores, which Ruby would read as digit separators" do
+    expect { caster.call("1_000") }.to raise_error(ArgumentError)
   end
 
   it "keeps integers, big ones included" do

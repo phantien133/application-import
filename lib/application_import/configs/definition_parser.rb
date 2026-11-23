@@ -17,6 +17,8 @@ module ApplicationImport
         parsed = parse_sections
         check_assign(parsed)
         check_stream(parsed)
+        check_numbers(parsed)
+        check_rename(parsed)
         raise Errors::ConfigError, "#{@name}: #{@errors.join("; ")}" if @errors.any?
 
         resolve_classes(parsed)
@@ -52,6 +54,41 @@ module ApplicationImport
         return unless parsed[:output][:stream] && parsed[:validators][:verify].any?
 
         add_error("output.stream", "cannot be used with verify validators (rows are written before verify)")
+      end
+
+      # A decimal column reads with file.numbers overridden by its own separators, the
+      # decimal one defaulting to ".": the merged pair must differ too (a clash within one
+      # level is already reported there).
+      def check_numbers(parsed)
+        numbers = parsed[:file][:numbers] || {}
+        parsed[:columns].each do |column|
+          next unless column.type == :decimal
+
+          thousands = merged_clash(numbers, column.options.slice(:decimal_separator, :thousands_separator))
+          next unless thousands
+
+          add_error("columns.#{column.key}", "thousands_separator #{thousands.inspect} is also its decimal " \
+                                             "separator (file.numbers, the column's own, default \".\")")
+        end
+      end
+
+      # The clashing separator of the merged pair, unless one level clashes by itself.
+      def merged_clash(numbers, own)
+        return if [ numbers, own ].any? { |format| format.size == 2 && format.values.uniq.one? }
+
+        format = numbers.merge(own)
+        format[:thousands_separator] if format[:thousands_separator] == format.fetch(:decimal_separator, ".")
+      end
+
+      # A rename target that is a declared column not renamed away itself would silently
+      # replace that column's value.
+      def check_rename(parsed)
+        mapper = parsed[:mapper]
+        return unless mapper && mapper[:type] == :rename && !mapper[:options][:only]
+
+        renames = mapper[:options][:attributes] || {}
+        clashes = renames.values & (@column_keys - renames.keys)
+        add_error("mapper.attributes", "would overwrite the columns #{clashes.join(", ")} (rename them too, or use only: true)") if clashes.any?
       end
 
       def warn_assign_all

@@ -6,9 +6,10 @@ module ApplicationImport
       private
 
       # The reader may hold the file open from here until close_reader (after process).
+      # Marked open first: a reader failing half-way through #open still gets #close.
       def open_reader
-        reader.open
         @reader_open = true
+        reader.open
       end
 
       # Runs after process, whatever happened; a failure to close is logged, not raised,

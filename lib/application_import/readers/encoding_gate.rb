@@ -69,7 +69,7 @@ module ApplicationImport
       private
 
       def transcode(input, file)
-        head = read_chunk(input)
+        head = read_head(input)
         bom, encoding = detect_bom(head)
         raise invalid("#{encoding} needs a BOM to be read", encoding) if BOM_ONLY.include?(encoding)
         raise invalid("#{encoding} cannot be converted to UTF-8", encoding) unless self.class.convertible?(encoding)
@@ -101,6 +101,18 @@ module ApplicationImport
         output.finish
       rescue Decoder::Invalid => e
         raise decode_error(e, output, decoder.encoding)
+      end
+
+      # The longest BOM is 4 bytes: an IO returning shorter reads is read on until then.
+      def read_head(input)
+        head = read_chunk(input)
+        while head.bytesize < 4
+          more = read_chunk(input)
+          break if more.empty?
+
+          head << more
+        end
+        head
       end
 
       def read_chunk(input)

@@ -73,7 +73,7 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
   describe "file.checker" do
     it "defaults to FileChecker, which warns about each unconfigured check" do
       expect(outcome).to eq(ok(ann))
-      expect(log.string.scan(/file\.(\w+) is not configured/).flatten).to eq(%w[ formats name_pattern max_size ])
+      expect(log.string.scan(/file\.(\w+) is not configured/).flatten).to eq(%w[ formats name_pattern ])
     end
 
     it "uses a custom FileChecker subclass" do
@@ -517,7 +517,7 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
     it "limits fields to DEFAULT_MAX_FIELD_SIZE when max_field_size is absent" do
       stub_const("ApplicationImport::Constants::DEFAULT_MAX_FIELD_SIZE", 10)
 
-      expect([ outcome, outcome("Email,Name\na@x.io,#{"x" * 11}\n") ]).to eq([ ok(ann), failed(:malformed_csv) ])
+      expect([ outcome, outcome("Email,Name\na@x.io,#{"x" * 11}\n") ]).to eq([ ok(ann), failed(:field_too_large) ])
     end
 
     it "lets max_field_size or passthrough raise the default" do
@@ -530,7 +530,7 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
 
     it "rejects fields longer than max_field_size" do
       expect([ outcome(file: { "csv" => { "max_field_size" => 6 } }), outcome(file: { "csv" => { "max_field_size" => 5 } }) ])
-        .to eq([ ok(ann), failed(:malformed_csv) ])
+        .to eq([ ok(ann), failed(:field_too_large) ])
     end
 
     it "hands passthrough options to CSV.new unvalidated" do

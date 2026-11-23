@@ -74,11 +74,15 @@ module ApplicationImport
       def bound(value, type, path)
         case type
         when :integer then value.is_a?(Integer) ? value : add_error(path, "must be an integer")
-        when :decimal then value.is_a?(Numeric) ? BigDecimal(value.to_s) : add_error(path, "must be a number")
+        when :decimal then decimal_bound(value, path)
         when :date, :datetime then temporal(value, type, path)
         when nil then nil
         else add_error(path, "is only allowed on integer, decimal, date and datetime columns")
         end
+      end
+
+      def decimal_bound(value, path)
+        (value.is_a?(Numeric) && value.to_f.finite?) ? BigDecimal(value.to_s) : add_error(path, "must be a finite number")
       end
 
       def temporal(value, type, path)

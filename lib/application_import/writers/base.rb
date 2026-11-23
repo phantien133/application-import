@@ -13,8 +13,20 @@ module ApplicationImport
     # (requires_new, so it nests as a savepoint): an abort rolls it back
     # (ActiveRecord::Rollback) and nothing counts as written. Each record / batch also
     # runs in its own savepoint, so a database error on one does not break the others.
+    #
+    # Errors of the database itself (FATAL_ERRORS: connection lost, timeouts, deadlocks,
+    # read-only) are not the rows' fault: they are raised, the run fails
+    # (unexpected_error) instead of every row getting not_saved.
     class Base
       include Logging
+
+      FATAL_ERRORS = [
+        ActiveRecord::ConnectionNotEstablished, ActiveRecord::QueryAborted, ActiveRecord::LockWaitTimeout,
+        ActiveRecord::TransactionRollbackError, ActiveRecord::ReadOnlyError
+      ].freeze
+      # Errors one row can cause: not_saved on that row. ActiveModel::RangeError: a value
+      # out of the column's range (e.g. an integer too big), raised while serializing.
+      ROW_ERRORS = [ ActiveRecord::ActiveRecordError, ActiveModel::RangeError ].freeze
 
       attr_reader :definition, :result
 

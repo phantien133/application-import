@@ -17,11 +17,15 @@ module ApplicationImport
         values = key_values(row)
         return if values.nil?
 
-        first = seen[values] ||= row.line
-        return if first == row.line
+        first = seen[values]
+        return seen[values] = row if first.nil? || first.equal?(row) || first.skipped?
 
-        row.add_error(code: :duplicate, column: keys.first, message: "#{key_headers} duplicates line #{first}",
-          details: { keys:, line: first })
+        duplicate!(row, first)
+      end
+
+      def duplicate!(row, first)
+        row.add_error(code: :duplicate, column: keys.first, message: "#{key_headers} duplicates line #{first.line}",
+          details: { keys:, line: first.line })
       end
 
       def keys
@@ -46,7 +50,8 @@ module ApplicationImport
                                    "(attributes: #{row.attributes.keys.join(", ")})"
       end
 
-      # Lines already seen by this run's instance, by key values.
+      # Rows already seen by this run's instance, by key values. A row skipped after it was
+      # seen (by a later check) gives way: the next row with its key is not a duplicate.
       def seen
         @seen ||= {}
       end

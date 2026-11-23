@@ -17,7 +17,13 @@ module ApplicationImport
       @logger = logger
     end
 
+    # A filename with a NUL byte is always invalid_name (no other check runs on it).
     def call(source, result)
+      if source.filename.include?("\0")
+        result.add_file_error(:invalid_name, "filename contains a NUL byte", details: { filename: source.filename })
+        return result
+      end
+
       CHECKS.each { |check| run_check(check, source, result) }
       result
     end

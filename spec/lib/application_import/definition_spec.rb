@@ -84,8 +84,14 @@ RSpec.describe ApplicationImport::Definition do
       dir.join("sub").mkpath
       dir.join("sub/members.yaml").write("on_error: skip\n")
 
-      [ dir.join("sub/members.yaml"), dir.join("sub/members.yaml").to_s ].each do |path|
-        expect(described_class.load(path).name).to eq(:members)
+      expect(described_class.load(dir.join("sub/members.yaml")).name).to eq(:members)
+    end
+
+    it "keeps String paths inside Rails.root (they may come from a request)" do
+      dir.join("members.yml").write("on_error: skip\n")
+
+      [ dir.join("members.yml").to_s, "config/../../outside.yml" ].each do |path|
+        expect { described_class.load(path) }.to raise_error(ApplicationImport::Errors::ConfigError, /must be inside the application/)
       end
     end
 

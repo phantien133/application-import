@@ -12,7 +12,10 @@ module ApplicationImport
         @number_format ||= (definition.file[:numbers] || {}).merge(column.options.slice(:decimal_separator, :thousands_separator))
       end
 
+      # Ruby's Integer() / BigDecimal() accept "1_000": a file never means that.
       def localized(text, fraction: true)
+        raise ArgumentError, "not a number" if text.include?("_")
+
         format = number_format
         return text if format.empty?
 

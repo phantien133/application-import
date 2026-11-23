@@ -195,8 +195,8 @@ RSpec.describe ApplicationImport::Readers::Csv do
     let(:file_config) { { "csv" => { "max_field_size" => 3 } } }
     let(:content) { "Email\ntoolong\n" }
 
-    it "rejects longer fields as malformed CSV" do
-      expect(file_error.first).to eq(:malformed_csv)
+    it "rejects longer fields as field_too_large" do
+      expect(file_error.first).to eq(:field_too_large)
     end
   end
 

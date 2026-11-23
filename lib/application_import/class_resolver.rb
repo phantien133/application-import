@@ -17,10 +17,17 @@ module ApplicationImport
     # abstract class (ApplicationRecord, ...), which have no table to write to.
     def resolve_model!(name, path:)
       model = resolve!(name, base: "ActiveRecord::Base")
+      raise Errors::InvalidClassError.new("#{path} must be an application model", klass: model, base: ActiveRecord::Base) if internal_model?(model)
       return model if model.nil? || (model != ActiveRecord::Base && !model.abstract_class?)
 
       raise Errors::InvalidClassError.new("#{path} must be a concrete model, #{model.name} is abstract", klass: model,
         base: ActiveRecord::Base)
+    end
+
+    # Rails' own models (ActiveRecord::InternalMetadata, Active Storage, ...).
+    def internal_model?(model)
+      !model.nil? && model != ActiveRecord::Base && model.name.to_s.start_with?("ActiveRecord::", "ActiveStorage::", "ActionText::", "ActionMailbox::",
+        "SolidQueue::", "SolidCable::")
     end
 
     def constantize(name)

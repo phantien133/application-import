@@ -6,7 +6,7 @@ module ApplicationImport
       include Constants
 
       KEYS = %w[ checker formats name_pattern max_size format reader encoding headers require_all_headers
-        unknown_headers assign extra_cells numbers csv xlsx ].freeze
+        unknown_headers assign extra_cells max_columns numbers csv xlsx ].freeze
       XLSX_KEYS = %w[ sheet ].freeze
       HOST_ALIASES = %w[ locale external filesystem internal ].freeze
 
@@ -24,19 +24,20 @@ module ApplicationImport
 
       private
 
-      # Settings used by the FileChecker (nil = check skipped).
+      # Settings used by the FileChecker (nil = check skipped). max_size defaults to
+      # DEFAULT_MAX_SIZE; `max_size: null` turns the check off.
       def checks
         {
           formats: formats(@file["formats"]),
           name_pattern: regexp(@file["name_pattern"], "file.name_pattern"),
-          max_size: optional_integer(@file["max_size"], "file.max_size")
+          max_size: optional_integer(@file.fetch("max_size", DEFAULT_MAX_SIZE), "file.max_size")
         }
       end
 
       # Settings used by the reader: a custom `reader` class wins over the one `format` picks.
       def reading
         {
-          format: one_of(@file.fetch("format", DEFAULT_FORMAT), FORMATS, "file.format"),
+          format: one_of(@file.fetch("format") { default_format }, FORMATS, "file.format"),
           reader: class_name(@file["reader"], "file.reader"),
           encoding: encoding(@file.fetch("encoding", DEFAULT_ENCODING)),
           csv: CsvOptionsParser.new(@file["csv"], @errors).parse,
@@ -52,6 +53,7 @@ module ApplicationImport
           unknown_headers: one_of(@file.fetch("unknown_headers", DEFAULT_UNKNOWN_HEADERS), UNKNOWN_HEADERS, "file.unknown_headers"),
           extra_cells: one_of(@file.fetch("extra_cells", DEFAULT_EXTRA_CELLS), EXTRA_CELLS, "file.extra_cells"),
           assign: assign_rules,
+          max_columns: @file["max_columns"].nil? ? nil : integer(@file["max_columns"], "file.max_columns", min: 1),
           numbers: numbers
         }
       end
@@ -74,6 +76,12 @@ module ApplicationImport
 
         key = rules.key?("allow") ? :allow : :ignore
         { key => names(rules[key.to_s], "file.assign.#{key}").map { |name| name.strip.downcase } }
+      end
+
+      # Without file.format: the first of file.formats, else csv.
+      def default_format
+        first = Array(@file["formats"]).first
+        FORMATS.include?(first.to_s) ? first.to_s : DEFAULT_FORMAT
       end
 
       def check_format_allowed(parsed)

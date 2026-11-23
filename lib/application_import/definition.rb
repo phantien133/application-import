@@ -25,8 +25,10 @@ module ApplicationImport
         new(name, ApplicationImport.configuration.with_defaults(config))
       end
 
+      # A String path (it may come from a request) must stay inside Rails.root; a
+      # Pathname is the caller's explicit choice and may point anywhere.
       def locate(source)
-        return locate_path(Rails.root.join(source.to_s)) if path?(source)
+        return locate_path(contained_path(source)) if path?(source)
 
         name = normalize_name(source)
         [ name, ApplicationImport.configuration.config_path.join("#{name}.yml") ]
@@ -36,6 +38,17 @@ module ApplicationImport
 
       def path?(source)
         source.is_a?(Pathname) || (source.is_a?(String) && Constants::YAML_EXTENSIONS.include?(File.extname(source)))
+      end
+
+      def contained_path(source)
+        path = Rails.root.join(source.to_s)
+        return path if source.is_a?(Pathname)
+
+        root = Rails.root.expand_path.to_s
+        expanded = path.expand_path.to_s
+        return path if expanded == root || expanded.start_with?("#{root}/")
+
+        raise Errors::ConfigError, "import config path must be inside the application: #{source}"
       end
 
       def locate_path(path)
