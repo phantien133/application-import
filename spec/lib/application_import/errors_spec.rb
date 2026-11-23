@@ -30,6 +30,30 @@ RSpec.describe ApplicationImport::Errors do
     end
   end
 
+  describe "code normalization" do
+    it "stores codes as Symbols" do
+      expect([
+        ApplicationImport::Errors::FileError.new("x", code: "bad").code,
+        ApplicationImport::Errors::RowError.new("x", line: 1, code: "required").code,
+        ApplicationImport::Errors::RowsError.new("x", lines: [ 1 ], code: "duplicate").code
+      ]).to eq(%i[ bad required duplicate ])
+    end
+  end
+
+  describe "line validation" do
+    it "requires RowError line to be an Integer >= 1" do
+      [ nil, 0, "2" ].each do |line|
+        expect { ApplicationImport::Errors::RowError.new("x", line:) }.to raise_error(ArgumentError, /line must be an Integer >= 1/)
+      end
+    end
+
+    it "requires RowsError lines to be non-empty Integers >= 1" do
+      [ [], nil, [ 2, nil ], [ 0 ] ].each do |lines|
+        expect { ApplicationImport::Errors::RowsError.new("x", lines:) }.to raise_error(ArgumentError, /lines must be Integers >= 1/)
+      end
+    end
+  end
+
   describe ApplicationImport::Errors::RowError do
     it "keeps the line, column and code" do
       error = described_class.new("Email is required", line: 3, column: :email, code: :required)

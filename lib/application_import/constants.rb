@@ -1,6 +1,7 @@
 module ApplicationImport
   module Constants
     HALT = :application_import_halt
+    NAME_FORMAT = /\A[a-z_][a-z0-9_]*\z/
 
     COMPLETED = :completed
     COMPLETED_WITH_ERRORS = :completed_with_errors

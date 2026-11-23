@@ -1,10 +1,45 @@
 RSpec.describe ApplicationImport do
   describe ".definition" do
-    it "loads the definition by name" do
-      definition = instance_double(ApplicationImport::Definition)
-      allow(ApplicationImport::Definition).to receive(:load).with(:users).and_return(definition)
+    let(:definition) { instance_double(ApplicationImport::Definition) }
 
-      expect(described_class.definition(:users)).to eq(definition)
+    before do
+      described_class.clear_definitions!
+      allow(ApplicationImport::Definition).to receive(:load).and_return(definition)
+    end
+
+    after { described_class.clear_definitions! }
+
+    it "loads once and reuses the definition when caching is on" do
+      allow(described_class).to receive(:cache_definitions?).and_return(true)
+
+      expect([ described_class.definition(:users), described_class.definition("users") ]).to eq([ definition, definition ])
+      expect(ApplicationImport::Definition).to have_received(:load).once
+    end
+
+    it "loads again after clear_definitions!" do
+      allow(described_class).to receive(:cache_definitions?).and_return(true)
+      described_class.definition(:users)
+      described_class.clear_definitions!
+      described_class.definition(:users)
+
+      expect(ApplicationImport::Definition).to have_received(:load).twice
+    end
+
+    it "loads every time when caching is off" do
+      allow(described_class).to receive(:cache_definitions?).and_return(false)
+      2.times { described_class.definition(:users) }
+
+      expect(ApplicationImport::Definition).to have_received(:load).twice
+    end
+
+    it "rejects invalid names before caching" do
+      allow(described_class).to receive(:cache_definitions?).and_return(true)
+
+      expect { described_class.definition("../users") }.to raise_error(ApplicationImport::Errors::ConfigError, /invalid import name/)
+    end
+
+    it "caches only when code reloading is disabled" do
+      expect(described_class.cache_definitions?).to eq(!Rails.application.config.enable_reloading)
     end
   end
 

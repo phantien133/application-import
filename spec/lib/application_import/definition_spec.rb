@@ -2,7 +2,7 @@ RSpec.describe ApplicationImport::Definition do
   let(:parsed) do
     {
       handler: ApplicationImport::Handler, file: { validator: ApplicationImport::FileValidator, max_rows: 100 },
-      columns: [], validators: [], output: { mode: :raw }, on_error: :abort
+      columns: [], validators: [], output: { mode: :raw }, on_error: ApplicationImport::ErrorPolicy.new
     }
   end
 
@@ -24,8 +24,25 @@ RSpec.describe ApplicationImport::Definition do
       definition = build
 
       expect([ definition.name, definition.handler_class, definition.output, definition.on_error ])
-        .to eq([ :users, ApplicationImport::Handler, { mode: :raw }, :abort ])
+        .to eq([ :users, ApplicationImport::Handler, { mode: :raw }, ApplicationImport::ErrorPolicy.new ])
       expect(definition).to be_frozen
+    end
+  end
+
+  describe ".normalize_name" do
+    it "accepts snake_case names as String or Symbol" do
+      expect([ described_class.normalize_name("users"), described_class.normalize_name(:user_v2) ]).to eq(%i[ users user_v2 ])
+    end
+
+    it "rejects anything else" do
+      [ nil, 1, "", "Users", "../users", "/etc/passwd", "users.yml", "a b" ].each do |name|
+        expect { described_class.normalize_name(name) }
+          .to raise_error(ApplicationImport::Errors::ConfigError, "invalid import name: #{name.inspect}")
+      end
+    end
+
+    it "is used by .new" do
+      expect { described_class.new(nil, {}) }.to raise_error(ApplicationImport::Errors::ConfigError, /invalid import name/)
     end
   end
 
@@ -39,6 +56,13 @@ RSpec.describe ApplicationImport::Definition do
       dir.join("users.yml").write("on_error: skip\n")
 
       expect(described_class.load(:users).name).to eq(:users)
+    end
+
+    it "rejects path traversal before touching the file system" do
+      dir.join("secret.yml").write("on_error: skip\n")
+
+      expect { described_class.load("../#{dir.basename}/secret") }
+        .to raise_error(ApplicationImport::Errors::ConfigError, /invalid import name/)
     end
 
     it "raises ConfigError when the file is missing" do
@@ -66,12 +90,6 @@ RSpec.describe ApplicationImport::Definition do
       definition = build(handler:, file: { validator:, max_rows: 100 })
 
       expect([ definition.handler_class, definition.file_validator_class ]).to eq([ handler, validator ])
-    end
-  end
-
-  describe "#abort_on_error?" do
-    it "is true for :abort and false for :skip" do
-      expect([ build(on_error: :abort).abort_on_error?, build(on_error: :skip).abort_on_error? ]).to eq([ true, false ])
     end
   end
 

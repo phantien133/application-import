@@ -14,7 +14,7 @@ module ApplicationImport
       def initialize(name, config)
         @name = name
         @errors = []
-        @config = config.is_a?(Hash) ? config.deep_stringify_keys : (add_error("config", "must be a mapping") || {})
+        @config = config.is_a?(Hash) ? config.deep_dup.deep_stringify_keys : (add_error("config", "must be a mapping") || {})
       end
 
       def parse
@@ -37,7 +37,7 @@ module ApplicationImport
           columns:,
           validators: parse_validators,
           output: parse_output(mapping(@config["output"], "output")),
-          on_error: one_of(@config.fetch("on_error", DEFAULT_ON_ERROR), ON_ERROR_MODES, "on_error")
+          on_error: OnErrorParser.new(@config["on_error"], @errors).parse
         }
       end
 

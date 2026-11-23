@@ -1,7 +1,10 @@
 module ApplicationImport
+  CONFIGURATION_LOCK = Mutex.new
+  DEFINITIONS = Concurrent::Map.new
+
   class << self
     def configuration
-      @configuration ||= Configuration.new
+      @configuration || CONFIGURATION_LOCK.synchronize { @configuration ||= Configuration.new }
     end
 
     def configure
@@ -9,11 +12,21 @@ module ApplicationImport
     end
 
     def reset_configuration!
-      @configuration = Configuration.new
+      CONFIGURATION_LOCK.synchronize { @configuration = Configuration.new }
     end
 
     def definition(name)
-      Definition.load(name)
+      return Definition.load(name) unless cache_definitions?
+
+      DEFINITIONS.compute_if_absent(Definition.normalize_name(name)) { Definition.load(name) }
+    end
+
+    def clear_definitions!
+      DEFINITIONS.clear
+    end
+
+    def cache_definitions?
+      !Rails.application.config.enable_reloading
     end
 
     def run(definition_or_name, file, filename: nil, context: {}, runner: nil)

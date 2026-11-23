@@ -7,25 +7,42 @@ module ApplicationImport
     def initialize(definition, source, context: {})
       @definition = definition
       @source = source
-      @context = context
-      @handler = definition.handler_class.new(definition, context)
+      @context = context.dup.freeze
+      @handler = definition.handler_class.new(definition, @context)
       @result = Result.new
     end
 
     def call
       catch(HALT) { run_steps }
-      handler.after_import(result)
       result
+    ensure
+      handler.after_import(result)
     end
 
     private
 
     def run_steps
-      validate_file
-      process
-    rescue Errors::FileError => e
-      result.add_exception(e)
-      halt!
+      step { validate_file }
+      step { process }
+    end
+
+    def step
+      yield
+    rescue Errors::FileError, Errors::RowError, Errors::RowsError => e
+      handle_error(e)
+    end
+
+    def handle_error(error)
+      result.add_exception(error)
+      action = error_action(error)
+      halt! if action == :abort
+      action
+    end
+
+    def error_action(error)
+      return :abort if error.is_a?(Errors::FileError)
+
+      definition.on_error.action_for(error.code)
     end
 
     def validate_file

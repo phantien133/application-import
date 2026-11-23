@@ -28,7 +28,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
               encoding: "UTF-8", csv: {}, xlsx: {} },
       validators: [],
       output: { mode: :raw, model: nil, batch_size: 1000, upsert: nil },
-      on_error: :abort
+      on_error: ApplicationImport::ErrorPolicy.new
     )
     expect(result[:columns].map(&:key)).to eq(%i[ email name ])
   end
@@ -37,8 +37,15 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     expect(Ractor.shareable?(parse({ "file" => { "name_pattern" => "x" } }))).to be(true)
   end
 
+  it "does not freeze the caller's config" do
+    config = { "columns" => { "joined_on" => { "type" => "date", "date_format" => +"%d/%m/%Y" } } }
+    described_class.new(:users, config).parse
+
+    expect([ config.frozen?, config["columns"]["joined_on"]["date_format"].frozen? ]).to eq([ false, false ])
+  end
+
   it "accepts symbol keys" do
-    expect(described_class.new(:users, { columns: { email: nil }, on_error: :skip }).parse[:on_error]).to eq(:skip)
+    expect(described_class.new(:users, { columns: { email: nil }, on_error: :skip }).parse[:on_error].default).to eq(:skip)
   end
 
   it "parses file options" do

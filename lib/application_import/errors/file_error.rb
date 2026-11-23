@@ -5,7 +5,7 @@ module ApplicationImport
 
       def initialize(message = nil, code: :invalid_file)
         super(message)
-        @code = code
+        @code = code.to_sym
       end
     end
   end

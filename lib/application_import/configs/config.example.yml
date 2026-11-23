@@ -80,4 +80,11 @@ output:
   upsert:
     conflict_target: [ email ]
     update: [ name, age, active ]
-on_error: abort
+# Row-level errors (file-level errors always stop the import):
+#   abort: record the error and stop; skip: record it, drop the row, continue;
+#   allow: record it, keep the row, continue.
+# Short form: `on_error: abort` (or skip) sets the default for every code.
+on_error:
+  default: abort                    # abort | skip, for codes not listed below
+  allow: [ duplicate ]              # example
+  skip: [ required, invalid_type ]  # example
