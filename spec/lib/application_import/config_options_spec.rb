@@ -688,6 +688,101 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
     end
   end
 
+  describe "output" do
+    before do
+      ActiveRecord::Base.connection.create_table(:output_spec_users, temporary: true) do |t|
+        t.string :email
+        t.string :name
+        t.index :email, unique: true
+      end
+      stub_const("OutputSpecUser", Class.new(ApplicationRecord) do
+        self.table_name = "output_spec_users"
+        validates :name, presence: true
+      end)
+    end
+
+    let(:content) { "Email,Name\na@x.io,Ann\nb@x.io,\nc@x.io,Cy\n" }
+
+    # Uses the real writers (no runner override).
+    def write(output, on_error: "skip", content: self.content)
+      definition = definition(output:, on_error:)
+      ApplicationImport.run(definition, StringIO.new(content), filename: "users.csv", logger:)
+    end
+
+    def summary(result)
+      [ result.status, result.errors.map { |e| [ e.line, e.code ] }, result.stats.values_at(:total, :valid, :invalid, :written),
+        OutputSpecUser.order(:email).pluck(:email) ]
+    end
+
+    it "returns attributes without touching the database by default (no model)" do
+      result = write({})
+
+      expect([ result.status, result.records.size, OutputSpecUser.count ]).to eq([ :completed, 3, 0 ])
+    end
+
+    it "imports with activerecord-import by default when a model is set" do
+      expect(summary(write({ "model" => "OutputSpecUser" }))).to eq([
+        :completed_with_errors, [ [ 3, :not_saved ] ], [ 3, 3, 1, 2 ], %w[ a@x.io c@x.io ]
+      ])
+    end
+
+    it "saves record by record with mode save" do
+      expect(summary(write({ "model" => "OutputSpecUser", "mode" => "save" }))).to eq([
+        :completed_with_errors, [ [ 3, :not_saved ] ], [ 3, 3, 1, 2 ], %w[ a@x.io c@x.io ]
+      ])
+    end
+
+    it "rolls the whole write back and fails on abort (transaction by default)" do
+      %w[ bulk save ].each do |mode|
+        expect(summary(write({ "model" => "OutputSpecUser", "mode" => mode }, on_error: "abort")))
+          .to eq([ :failed, [ [ 3, :not_saved ] ], [ 3, 3, 1, 0 ], [] ])
+      end
+    end
+
+    it "keeps what was written before the abort without transaction" do
+      result = write({ "model" => "OutputSpecUser", "mode" => "save", "transaction" => false }, on_error: "abort")
+
+      expect(summary(result)).to eq([ :failed, [ [ 3, :not_saved ] ], [ 3, 3, 1, 1 ], %w[ a@x.io ] ])
+    end
+
+    it "does not write rows skipped before the write" do
+      columns = { "email" => { "header" => "Email", "required" => true }, "name" => { "header" => "Name" } }
+      result = ApplicationImport.run(definition(columns:, output: { "model" => "OutputSpecUser" }, on_error: "skip"),
+        StringIO.new("Email,Name\na@x.io,Ann\n,Bob\n"), filename: "users.csv", logger:)
+
+      expect(summary(result)).to eq([ :completed_with_errors, [ [ 3, :required ] ], [ 2, 1, 1, 1 ], %w[ a@x.io ] ])
+    end
+
+    it "upserts and passes import options" do
+      OutputSpecUser.create!(email: "a@x.io", name: "Old")
+      output = { "model" => "OutputSpecUser", "upsert" => { "conflict_target" => [ "email" ], "update" => [ "name" ] } }
+
+      write(output, content: "Email,Name\na@x.io,New\n")
+
+      expect(OutputSpecUser.pluck(:name)).to eq([ "New" ])
+    end
+
+    it "passes save options" do
+      write({ "model" => "OutputSpecUser", "mode" => "save", "save" => { "validate" => false } })
+
+      expect(OutputSpecUser.count).to eq(3)
+    end
+
+    it "logs a summary at the end" do
+      write({ "model" => "OutputSpecUser" })
+
+      expect(log.string).to include("finished users.csv: completed_with_errors, total 3, valid 3, invalid 1, written 2")
+    end
+
+    it "rejects invalid output settings" do
+      expect([ config_error(output: { "mode" => "database" }), config_error(output: { "mode" => "save" }),
+        config_error(output: { "model" => "OutputSpecUser", "mode" => "save", "import" => {} }),
+        config_error(output: { "model" => "OutputSpecUser", "transaction" => "yes" }) ])
+        .to eq([ "users: output.mode must be one of raw, save, bulk", "users: output.model is required when mode is save",
+          "users: output.import is only used when mode is bulk", "users: output.transaction must be true or false" ])
+    end
+  end
+
   describe "settings defaults" do
     after { ApplicationImport.reset_configuration! }
 

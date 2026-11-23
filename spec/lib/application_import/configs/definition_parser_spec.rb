@@ -5,7 +5,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     {
       "unknown" => 1, "on_error" => "ignore", "handler" => 1,
       "file" => { "formats" => [ "pdf" ], "max_size" => 0, "encoding" => "nope", "headers" => "yes", "csv" => { "sep" => "," }, "extra" => 1 },
-      "output" => { "mode" => "database", "batch_size" => "x", "upsert" => { "update" => [ "age" ] } }
+      "output" => { "mode" => "bulk", "batch_size" => "x", "upsert" => { "update" => [ "age" ] } }
     }
   end
 
@@ -27,7 +27,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
       file: { checker: ApplicationImport::FileChecker, formats: nil, name_pattern: nil, max_size: nil,
               format: :csv, reader: nil, encoding: "UTF-8", headers: true, require_all_headers: false, unknown_headers: :skip, extra_cells: :warn, csv: {}, xlsx: {} },
       validators: { file: [], row: [], rows: [], verify: [] },
-      output: { mode: :raw, model: nil, batch_size: 1000, upsert: nil },
+      output: { mode: :raw, model: nil, batch_size: 1000, transaction: true, upsert: nil, import: {}, save: {} },
       on_error: ApplicationImport::ErrorPolicy.new
     )
     expect(result[:columns].map(&:key)).to eq(%i[ email name ])
@@ -92,7 +92,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
       "file.encoding is not a known encoding: nope",
       "file.headers must be true or false",
       "file.csv has unknown keys: sep",
-      "output.model is required when mode is database",
+      "output.model is required when mode is bulk",
       "output.batch_size must be an integer >= 1",
       "output.upsert.update references unknown columns: age",
       "output.upsert.conflict_target must be a non-empty list of names",
@@ -105,13 +105,14 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
       .to raise_error(ApplicationImport::Errors::ConfigError, /config must be a mapping/)
   end
 
-  it "parses database output with upsert" do
+  it "parses bulk output with upsert and import options" do
     stub_const("ImportUser", Class.new(ApplicationRecord))
-    output = parse({ "output" => { "mode" => "database", "model" => "ImportUser", "batch_size" => 500,
-                                   "upsert" => { "conflict_target" => [ "email" ], "update" => [ "name" ] } } })[:output]
+    output = parse({ "output" => { "mode" => "bulk", "model" => "ImportUser", "batch_size" => 500, "transaction" => false,
+                                   "upsert" => { "conflict_target" => [ "email" ], "update" => [ "name" ] },
+                                   "import" => { "validate" => false, "on_duplicate_key_ignore" => true } } })[:output]
 
-    expect(output).to eq(mode: :database, model: ImportUser, batch_size: 500,
-      upsert: { conflict_target: [ :email ], update: [ :name ] })
+    expect(output).to eq(mode: :bulk, model: ImportUser, batch_size: 500, transaction: false,
+      upsert: { conflict_target: [ :email ], update: [ :name ] }, import: { validate: false, on_duplicate_key_ignore: true }, save: {})
   end
 
   describe "class references" do
@@ -199,7 +200,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     end
 
     it "raises InvalidClassError for a model that is not an ActiveRecord model" do
-      expect { parse({ "output" => { "mode" => "database", "model" => "String" } }) }
+      expect { parse({ "output" => { "mode" => "bulk", "model" => "String" } }) }
         .to raise_error(ApplicationImport::Errors::InvalidClassError, "String must inherit from ActiveRecord::Base")
     end
   end

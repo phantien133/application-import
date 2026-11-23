@@ -31,6 +31,7 @@ module ApplicationImport
       result
     ensure
       close_reader
+      info("finished #{source.filename}: #{result.status}, #{result.stats.map { |key, value| "#{key} #{value}" }.join(", ")}")
       handler.after_import(result)
     end
 

@@ -427,10 +427,11 @@ RSpec.describe ApplicationImport::Runner do
     end
   end
 
-  it "does not implement write_rows yet" do
-    plain = described_class.new(definition, source)
+  it "writes with the default writer (raw without output.model)" do
+    result = described_class.new(definition, source).call
 
-    expect { plain.call }.to raise_error(NotImplementedError, "ApplicationImport::Runner#write_rows")
+    expect([ result.status, result.records, result.stats.values_at(:total, :valid, :written) ])
+      .to eq([ :completed, [ { email: "a@example.com" }, { email: "b@example.com" } ], [ 2, 2, 2 ] ])
   end
 
   describe "reader lifecycle" do

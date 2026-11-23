@@ -24,7 +24,7 @@ module ApplicationImport
       rows: { unique_in_file: "ApplicationImport::Validators::UniqueInFile" }.freeze,
       verify: {}.freeze
     }.freeze
-    OUTPUT_MODES = %w[ raw database ].freeze
+    OUTPUT_MODES = %w[ raw save bulk ].freeze
     ON_ERROR_MODES = %w[ abort skip ].freeze
     ROW_ERRORS = %w[ first all ].freeze
     UNKNOWN_HEADERS = %w[ skip keep assign reject ].freeze
@@ -32,7 +32,6 @@ module ApplicationImport
     EMAIL_FORMAT = "email".freeze
 
     DEFAULT_COLUMN_TYPE = "string".freeze
-    DEFAULT_OUTPUT_MODE = "raw".freeze
     DEFAULT_ON_ERROR = "abort".freeze
     DEFAULT_ROW_ERRORS = "first".freeze
     DEFAULT_ENCODING = "UTF-8".freeze

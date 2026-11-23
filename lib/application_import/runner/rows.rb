@@ -61,10 +61,20 @@ module ApplicationImport
         settle_all
       end
 
-      # Writers come next (output.mode raw / save / bulk). Not named `import` on purpose:
-      # activerecord-import adds Model.import, and the step must not be mistaken for it.
+      # Writes the kept rows with handler.write and the writer for output.mode. Not named
+      # `import` on purpose: activerecord-import adds Model.import. A write failure is a
+      # not_saved row error settled without halting inside the writer's transaction;
+      # an abort halts once the writer returned.
       def write_rows
-        raise NotImplementedError, "#{self.class.name}#write_rows"
+        kept = rows
+        result.increment(:valid, kept.size)
+        written = handler.write(kept, writer)
+        result.increment(:written, written)
+        halt! if writer.aborted?
+      end
+
+      def writer
+        @writer ||= Writers.for(definition, result:, logger:, on_failure: ->(row) { settle(row, halt: false) })
       end
 
       # Turns raised row errors into errors on the rows they concern.
@@ -93,16 +103,18 @@ module ApplicationImport
         @rows_by_line.each_value { |other| settle(other) unless other.equal?(row) }
       end
 
-      def settle(row)
+      # Records the row's new errors and applies on_error; returns the action. With
+      # halt: false an abort is only returned (the writer stops and the Runner halts).
+      def settle(row, halt: true)
         errors = row.take_new_errors
         return if errors.empty?
 
         result.increment(:invalid) if errors.size == row.errors.size
         errors.each { |error| result.add_error(error) }
-        case row_action(errors)
-        when :abort then halt!
-        when :skip then row.skip!
-        end
+        action = row_action(errors)
+        halt! if action == :abort && halt
+        row.skip! if action == :skip
+        action
       end
 
       def row_action(errors)

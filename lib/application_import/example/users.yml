@@ -104,12 +104,16 @@ validators:
     - class: Imports::Users::ManagersExistValidator
 
 output:
-  mode: raw
+  mode: bulk              # bulk (default with model: activerecord-import) | save (record.save each) | raw (no DB)
   model: User
-  batch_size: 1000
-  upsert:
+  batch_size: 1000        # rows per Model.import call
+  transaction: true       # one transaction for the whole write; an abort rolls it back
+  upsert:                 # bulk only -> on_duplicate_key_update
     conflict_target: [ email ]
     update: [ name, age, active ]
+  import:                 # bulk only: any activerecord-import option, as-is (not validated)
+    validate: true
+  # save:                 # save only: options for record.save, as-is (e.g. validate: false)
 # Row-level errors (file-level errors always stop the import):
 #   abort: record the error and stop; skip: record it, drop the row, continue;
 #   allow: record it, keep the row, continue.
