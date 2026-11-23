@@ -4,11 +4,18 @@ module ApplicationImport
 
     attr_reader :records, :errors, :stats
 
-    def initialize
+    # dry_run: the run's database changes were rolled back (stats say what would have
+    # been written).
+    def initialize(dry_run: false)
       @records = []
       @errors = []
       @stats = EMPTY_STATS.dup
       @halted = false
+      @dry_run = dry_run
+    end
+
+    def dry_run?
+      @dry_run
     end
 
     def add_error(error)
@@ -77,7 +84,7 @@ module ApplicationImport
     end
 
     def to_h
-      { status:, stats:, errors: errors.map(&:to_h), records: }
+      { status:, dry_run: dry_run?, stats:, errors: errors.map(&:to_h), records: }
     end
   end
 end

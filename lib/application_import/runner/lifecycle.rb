@@ -35,8 +35,22 @@ module ApplicationImport
       def finish
         count_valid
         close_reader
-        info("finished #{source.filename}: #{result.status}, #{result.stats.map { |key, value| "#{key} #{value}" }.join(", ")}")
+        info("finished #{source.filename}#{" (dry run, rolled back)" if result.dry_run?}: #{result.status}, " \
+             "#{result.stats.map { |key, value| "#{key} #{value}" }.join(", ")}")
         run_after_import
+      end
+
+      # Dry run: the steps run in a transaction (on output.model's connection, else
+      # ActiveRecord::Base's) that is always rolled back. HALT is caught inside it, so
+      # no throw crosses the transaction (Rails would commit); after_import runs after the
+      # rollback and sees result.dry_run?.
+      def within_dry_run(&)
+        return yield unless result.dry_run?
+
+        (definition.output[:model] || ActiveRecord::Base).transaction(requires_new: true) do
+          yield
+          raise ActiveRecord::Rollback
+        end
       end
 
       # valid: rows read without any error (total = valid + invalid).

@@ -72,11 +72,15 @@ RSpec.describe ApplicationImport::Result do
     end
   end
 
+  it "is not a dry run by default" do
+    expect([ described_class.new.dry_run?, described_class.new(dry_run: true).dry_run? ]).to eq([ false, true ])
+  end
+
   it "serializes to a hash" do
     result.add_file_error(:empty_file, "file is empty").add_records([ { id: 1 } ]).halt!
 
     expect(result.to_h).to eq(
-      status: :failed, stats: { total: 0, valid: 0, invalid: 0, written: 0 },
+      status: :failed, dry_run: false, stats: { total: 0, valid: 0, invalid: 0, written: 0 },
       errors: [ { code: :empty_file, message: "file is empty" } ], records: [ { id: 1 } ]
     )
   end

@@ -13,13 +13,15 @@ module ApplicationImport
 
     attr_reader :definition, :source, :context, :handler, :result, :cache
 
-    def initialize(definition, source, context: {}, logger: ApplicationImport.logger)
+    # dry_run: run every step, writes included, inside one transaction that is always
+    # rolled back (see Runner::Lifecycle#within_dry_run).
+    def initialize(definition, source, context: {}, logger: ApplicationImport.logger, dry_run: false)
       @definition = definition
       @source = source
       @logger = logger
       @context = context.dup.freeze
       @handler = definition.handler_class.new(definition, @context)
-      @result = Result.new
+      @result = Result.new(dry_run:)
       @rows_by_line = {}
       @pending_rows = Set.new.compare_by_identity
       @cache = {}
@@ -36,7 +38,7 @@ module ApplicationImport
     # unexpected_error file error, so close_reader, the summary log and
     # handler.after_import all see the real outcome; it is then re-raised.
     def call
-      catch(HALT) { run_steps }
+      within_dry_run { catch(HALT) { run_steps } }
       result
     rescue Exception => e # rubocop:disable Lint/RescueException -- recorded, then re-raised
       fail_unexpectedly(e)

@@ -42,10 +42,11 @@ module ApplicationImport
     end
 
     # `logger:` overrides the configured logger for this run only.
-    def run(definition_or_name, file, filename: nil, context: {}, runner: nil, logger: nil)
+    # dry_run: every step runs, writes included, then the changes are rolled back.
+    def run(definition_or_name, file, filename: nil, context: {}, runner: nil, logger: nil, dry_run: false)
       definition = definition_or_name.is_a?(Definition) ? definition_or_name : definition(definition_or_name)
       runner_class = ClassResolver.resolve!(runner, base: Runner, default: Runner, error: Errors::InvalidRunnerError)
-      runner_class.new(definition, Source.build(file, filename:), context:, logger: logger || self.logger).call
+      runner_class.new(definition, Source.build(file, filename:), context:, logger: logger || self.logger, dry_run:).call
     end
   end
 end

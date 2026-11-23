@@ -98,7 +98,11 @@ RSpec.describe ApplicationImport do
       result = described_class.run(definition, "users.csv", filename: "u.csv", context: { user_id: 1 })
 
       expect(result).to be_a(runner_class)
-      expect(result.args).to eq([ [ definition, source ], { context: { user_id: 1 }, logger: described_class.logger } ])
+      expect(result.args).to eq([ [ definition, source ], { context: { user_id: 1 }, logger: described_class.logger, dry_run: false } ])
+    end
+
+    it "passes dry_run" do
+      expect(described_class.run(definition, "users.csv", filename: "u.csv", dry_run: true).args.last[:dry_run]).to be(true)
     end
 
     it "passes a per-run logger" do

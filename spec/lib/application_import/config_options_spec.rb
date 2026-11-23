@@ -1145,6 +1145,93 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
     end
   end
 
+  describe "dry_run" do
+    before do
+      ActiveRecord::Base.connection.create_table(:dry_run_users, temporary: true) do |t|
+        t.string :email
+        t.string :name
+      end
+      stub_const("DryRunUser", Class.new(ApplicationRecord) do
+        self.table_name = "dry_run_users"
+        validates :name, presence: true
+      end)
+    end
+
+    let(:content) { "Email,Name\na@x.io,Ann\nb@x.io,\nc@x.io,Cy\n" }
+
+    def dry(output = {}, on_error: "skip")
+      ApplicationImport.run(definition(output: { "model" => "DryRunUser", **output }, on_error:), StringIO.new(content),
+        filename: "users.csv", logger:, dry_run: true)
+    end
+
+    it "runs every step, writes included, then rolls back" do
+      %w[ bulk save ].each do |mode|
+        result = dry({ "mode" => mode })
+
+        expect([ result.dry_run?, result.status, result.stats.values_at(:total, :valid, :invalid, :written), result.errors.map(&:code) ])
+          .to eq([ true, :completed_with_errors, [ 3, 2, 1, 2 ], %i[ not_saved ] ])
+        expect(DryRunUser.count).to eq(0)
+      end
+    end
+
+    it "rolls back when the import halts" do
+      result = dry({}, on_error: "abort")
+
+      expect([ result.status, DryRunUser.count ]).to eq([ :failed, 0 ])
+    end
+
+    it "rolls back stream batches too" do
+      result = dry({ "stream" => true, "batch_size" => 1 })
+
+      expect([ result.stats[:written], DryRunUser.count ]).to eq([ 2, 0 ])
+    end
+
+    it "rolls back and re-raises on an unexpected exception" do
+      stub_const("Boom", Class.new(ApplicationImport::Transformers::Base) do
+        define_method(:call) { |_attributes, row| (row.line == 3) ? raise("boom") : nil }
+      end)
+      definition = definition(output: { "model" => "DryRunUser", "stream" => true, "batch_size" => 1 }, transformers: [ { "class" => "Boom" } ])
+
+      expect { ApplicationImport.run(definition, StringIO.new(content), filename: "u.csv", logger:, dry_run: true) }.to raise_error("boom")
+      expect(DryRunUser.count).to eq(0)
+    end
+
+    it "keeps the caller's open transaction usable" do
+      dry
+
+      expect(DryRunUser.create!(email: "x", name: "X")).to be_persisted
+    end
+
+    it "calls after_import after the rollback, with the dry run result" do
+      seen = []
+      stub_const("DryHandler", Class.new(ApplicationImport::Handler) do
+        define_method(:after_import) { |result| seen << [ result.dry_run?, DryRunUser.count ] }
+      end)
+      ApplicationImport.run(definition(handler: "DryHandler", output: { "model" => "DryRunUser" }), StringIO.new(content),
+        filename: "u.csv", logger:, dry_run: true)
+
+      expect(seen).to eq([ [ true, 0 ] ])
+    end
+
+    it "works without a model (raw output)" do
+      result = ApplicationImport.run(definition, StringIO.new("Email,Name\na@x.io,Ann\n"), filename: "u.csv", logger:, dry_run: true)
+
+      expect([ result.dry_run?, result.records ]).to eq([ true, [ ann ] ])
+    end
+
+    it "logs the summary as a dry run" do
+      dry
+
+      expect(log.string).to include("finished users.csv (dry run, rolled back): completed_with_errors")
+    end
+
+    it "is off by default" do
+      result = ApplicationImport.run(definition(output: { "model" => "DryRunUser" }, on_error: "skip"), StringIO.new(content), filename: "u.csv", logger:)
+
+      expect([ result.dry_run?, DryRunUser.count ]).to eq([ false, 2 ])
+    end
+  end
+
   describe "settings defaults" do
     after { ApplicationImport.reset_configuration! }
 
