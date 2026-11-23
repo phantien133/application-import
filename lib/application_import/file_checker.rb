@@ -1,5 +1,5 @@
 module ApplicationImport
-  class FileValidator
+  class FileChecker
     attr_reader :definition
 
     def initialize(definition)

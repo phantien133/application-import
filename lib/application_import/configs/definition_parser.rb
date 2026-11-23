@@ -5,7 +5,7 @@ module ApplicationImport
       include Constants
 
       ROOT_KEYS = %w[ handler file columns validators output on_error ].freeze
-      FILE_KEYS = %w[ validator formats name_pattern max_size max_rows encoding csv xlsx ].freeze
+      FILE_KEYS = %w[ checker formats name_pattern max_size max_rows encoding csv xlsx ].freeze
       CSV_KEYS = %w[ col_sep quote_char row_sep ].freeze
       XLSX_KEYS = %w[ sheet ].freeze
       OUTPUT_KEYS = %w[ mode model batch_size upsert ].freeze
@@ -42,13 +42,13 @@ module ApplicationImport
       end
 
       def parse_validators
-        ValidatorParser.new(@config.fetch("validators", []), @column_keys, @errors).parse
+        ValidatorParser.new(@config["validators"], @column_keys, @errors).parse
       end
 
       def parse_file(file)
         check_keys(file, FILE_KEYS, "file")
         {
-          validator: class_name(file["validator"], "file.validator"),
+          checker: class_name(file["checker"], "file.checker"),
           formats: formats(file.fetch("formats", DEFAULT_FORMATS)),
           name_pattern: regexp(file["name_pattern"], "file.name_pattern"),
           max_size: integer(file.fetch("max_size", DEFAULT_MAX_SIZE), "file.max_size"),
@@ -100,13 +100,22 @@ module ApplicationImport
 
       def resolve_classes(parsed)
         parsed[:handler] = resolve(parsed[:handler], Handler, Errors::InvalidHandlerError)
-        parsed[:file][:validator] = resolve(parsed[:file][:validator], FileValidator, Errors::InvalidFileValidatorError)
+        parsed[:file][:checker] = resolve(parsed[:file][:checker], FileChecker, Errors::InvalidFileCheckerError)
         resolve_references(parsed)
       end
 
       def resolve_references(parsed)
-        parsed[:validators].each { |spec| spec[:class] = ClassResolver.resolve!(spec[:class], base: Object) }
+        resolve_validators(parsed[:validators])
         parsed[:output][:model] = ClassResolver.resolve!(parsed[:output][:model], base: "ActiveRecord::Base")
+      end
+
+      def resolve_validators(validators)
+        validators.each do |stage, specs|
+          specs.each do |spec|
+            spec[:class] = ClassResolver.resolve!(spec[:class], base: VALIDATOR_BASES.fetch(stage),
+              error: Errors::InvalidValidatorError)
+          end
+        end
       end
 
       def resolve(name, base, error)

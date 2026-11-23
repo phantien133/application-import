@@ -3,8 +3,9 @@ RSpec.describe ApplicationImport::Runner do
   let(:definition) do
     ApplicationImport::Definition.new(:users, {
       "handler" => "ImportTestHandler",
-      "file" => { "validator" => "ImportTestFileValidator" },
+      "file" => { "checker" => "ImportTestFileChecker" },
       "columns" => { "email" => nil },
+      "validators" => { "file" => [ { "class" => "ImportTestFileStageValidator", "tag" => "v1" } ] },
       "on_error" => on_error_config
     })
   end
@@ -14,6 +15,10 @@ RSpec.describe ApplicationImport::Runner do
     process = processor
     Class.new(described_class) { define_method(:process) { instance_exec(&process) } }
       .new(definition, source, context: { user_id: 1 })
+  end
+
+  def stage_log
+    @stage_log ||= []
   end
 
   def on_error_config
@@ -26,16 +31,20 @@ RSpec.describe ApplicationImport::Runner do
         @calls ||= []
       end
 
-      def validate_file_meta(source, result)
-        calls << [ :validate_file_meta, source, result.errors.size ]
+      def validate_file(source, result)
+        calls << [ :validate_file, source, result.errors.size ]
       end
 
       def after_import(result)
         calls << [ :after_import, result ]
       end
     end)
+    log = stage_log
+    stub_const("ImportTestFileStageValidator", Class.new(ApplicationImport::Validators::FileValidator) do
+      define_method(:call) { |source, _result| log << [ options[:tag], source, object_id ] }
+    end)
     validation = file_validation
-    stub_const("ImportTestFileValidator", Class.new(ApplicationImport::FileValidator) do
+    stub_const("ImportTestFileChecker", Class.new(ApplicationImport::FileChecker) do
       define_method(:call) { |source, result| validation.call(source, result) }
     end)
   end
@@ -48,7 +57,7 @@ RSpec.describe ApplicationImport::Runner do
     result = runner.call
 
     expect([ result, result.status, result.stats[:total] ]).to eq([ runner.result, :completed, 1 ])
-    expect(runner.handler.calls).to eq([ [ :validate_file_meta, source, 0 ], [ :after_import, result ] ])
+    expect(runner.handler.calls).to eq([ [ :validate_file, source, 0 ], [ :after_import, result ] ])
   end
 
   context "when the file validator adds a file error" do
@@ -67,7 +76,7 @@ RSpec.describe ApplicationImport::Runner do
     let(:processor) { -> { raise "process must not run" } }
 
     it "halts with the handler error" do
-      ImportTestHandler.define_method(:validate_file_meta) { |_source, result| result.add_file_error(:forbidden, "no") }
+      ImportTestHandler.define_method(:validate_file) { |_source, result| result.add_file_error(:forbidden, "no") }
 
       expect(runner.call.errors.map(&:code)).to eq([ :forbidden ])
     end
@@ -176,6 +185,13 @@ RSpec.describe ApplicationImport::Runner do
     it "always halts on file errors" do
       expect(runner.call.status).to eq(:failed)
     end
+  end
+
+  it "runs file-stage validators with their options, a new instance per run" do
+    2.times { runner.class.new(definition, source).call }
+
+    expect(stage_log.map { |tag, given, _id| [ tag, given ] }).to eq([ [ "v1", source ], [ "v1", source ] ])
+    expect(stage_log.map(&:last).uniq.size).to eq(2)
   end
 
   it "keeps its own frozen copy of the context" do

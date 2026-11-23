@@ -46,13 +46,25 @@ module ApplicationImport
     end
 
     def validate_file
-      definition.file_validator_class.new(definition).call(source, result)
-      handler.validate_file_meta(source, result)
+      definition.file_checker_class.new(definition).call(source, result)
+      run_validators(:file, source)
+      handler.validate_file(source, result)
       halt! if result.file_errors?
     end
 
     def process
       raise NotImplementedError, "#{self.class.name}#process"
+    end
+
+    def run_validators(stage, subject)
+      validators(stage).each { |validator| validator.call(subject, result) }
+    end
+
+    def validators(stage)
+      @validators ||= definition.validators.transform_values do |specs|
+        specs.map { |spec| spec[:class].new(definition, spec[:options]) }
+      end
+      @validators.fetch(stage)
     end
 
     def halt!

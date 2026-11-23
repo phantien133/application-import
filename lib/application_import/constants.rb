@@ -10,15 +10,25 @@ module ApplicationImport
 
     FORMATS = %w[ csv xlsx ].freeze
     COLUMN_TYPES = %w[ string integer decimal boolean date datetime ].freeze
-    VALIDATOR_TYPES = %w[ unique_in_file ].freeze
-    VALIDATOR_SCOPES = %w[ file row ].freeze
+    VALIDATOR_STAGES = %w[ file row rows verify ].freeze
+    VALIDATOR_BASES = {
+      file: "ApplicationImport::Validators::FileValidator",
+      row: "ApplicationImport::Validators::RowValidator",
+      rows: "ApplicationImport::Validators::RowsValidator",
+      verify: "ApplicationImport::Validators::VerifyValidator"
+    }.freeze
+    BUILTIN_VALIDATORS = {
+      file: {}.freeze,
+      row: { model: "ApplicationImport::Validators::ModelValidator" }.freeze,
+      rows: { unique_in_file: "ApplicationImport::Validators::UniqueInFile" }.freeze,
+      verify: {}.freeze
+    }.freeze
     OUTPUT_MODES = %w[ raw database ].freeze
     ON_ERROR_MODES = %w[ abort skip ].freeze
     EMAIL_FORMAT = "email".freeze
 
     DEFAULT_FORMATS = %w[ csv ].freeze
     DEFAULT_COLUMN_TYPE = "string".freeze
-    DEFAULT_VALIDATOR_SCOPE = "file".freeze
     DEFAULT_OUTPUT_MODE = "raw".freeze
     DEFAULT_ON_ERROR = "abort".freeze
     DEFAULT_ENCODING = "UTF-8".freeze

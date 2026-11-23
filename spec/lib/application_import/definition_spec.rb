@@ -1,8 +1,8 @@
 RSpec.describe ApplicationImport::Definition do
   let(:parsed) do
     {
-      handler: ApplicationImport::Handler, file: { validator: ApplicationImport::FileValidator, max_rows: 100 },
-      columns: [], validators: [], output: { mode: :raw }, on_error: ApplicationImport::ErrorPolicy.new
+      handler: ApplicationImport::Handler, file: { checker: ApplicationImport::FileChecker, max_rows: 100 },
+      columns: [], validators: { file: [] }, output: { mode: :raw }, on_error: ApplicationImport::ErrorPolicy.new
     }
   end
 
@@ -86,10 +86,10 @@ RSpec.describe ApplicationImport::Definition do
   describe "class readers" do
     it "returns the classes resolved by the parser" do
       handler = stub_const("UsersHandler", Class.new(ApplicationImport::Handler))
-      validator = stub_const("UsersFileValidator", Class.new(ApplicationImport::FileValidator))
-      definition = build(handler:, file: { validator:, max_rows: 100 })
+      validator = stub_const("UsersFileChecker", Class.new(ApplicationImport::FileChecker))
+      definition = build(handler:, file: { checker: validator, max_rows: 100 })
 
-      expect([ definition.handler_class, definition.file_validator_class ]).to eq([ handler, validator ])
+      expect([ definition.handler_class, definition.file_checker_class ]).to eq([ handler, validator ])
     end
   end
 

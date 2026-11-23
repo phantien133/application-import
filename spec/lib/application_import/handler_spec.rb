@@ -33,9 +33,9 @@ RSpec.describe ApplicationImport::Handler do
   end
 
   it "has no-op validation hooks that add no errors" do
-    handler.validate_file_meta(Object.new, result)
+    handler.validate_file(Object.new, result)
     handler.validate_row(Object.new, result)
-    handler.validate_file([], result)
+    handler.validate_rows(Object.new, result)
     handler.verify([], result)
     handler.after_import(result)
 

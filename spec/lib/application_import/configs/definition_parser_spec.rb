@@ -24,9 +24,9 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
 
     expect(result.except(:columns)).to eq(
       handler: ApplicationImport::Handler,
-      file: { validator: ApplicationImport::FileValidator, formats: [ :csv ], name_pattern: nil, max_size: 10_485_760, max_rows: 100_000,
+      file: { checker: ApplicationImport::FileChecker, formats: [ :csv ], name_pattern: nil, max_size: 10_485_760, max_rows: 100_000,
               encoding: "UTF-8", csv: {}, xlsx: {} },
-      validators: [],
+      validators: { file: [], row: [], rows: [], verify: [] },
       output: { mode: :raw, model: nil, batch_size: 1000, upsert: nil },
       on_error: ApplicationImport::ErrorPolicy.new
     )
@@ -53,7 +53,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
                                "max_rows" => 2, "encoding" => "shift_jis", "csv" => { "col_sep" => ";" },
                                "xlsx" => { "sheet" => "Data" } } })[:file]
 
-    expect(file.except(:validator)).to eq(formats: %i[ csv xlsx ], name_pattern: /\Ausers\.csv\z/, max_size: 1, max_rows: 2,
+    expect(file.except(:checker)).to eq(formats: %i[ csv xlsx ], name_pattern: /\Ausers\.csv\z/, max_size: 1, max_rows: 2,
       encoding: "Shift_JIS", csv: { col_sep: ";" }, xlsx: { sheet: "Data" })
   end
 
@@ -91,12 +91,12 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
   describe "class references" do
     it "resolves configured classes once" do
       handler = stub_const("UsersHandler", Class.new(ApplicationImport::Handler))
-      validator = stub_const("UsersFileValidator", Class.new(ApplicationImport::FileValidator))
-      domain = stub_const("DomainValidator", Class.new)
-      result = parse({ "handler" => "UsersHandler", "file" => { "validator" => "UsersFileValidator" },
-                       "validators" => [ { "class" => "DomainValidator" } ] })
+      validator = stub_const("UsersFileChecker", Class.new(ApplicationImport::FileChecker))
+      domain = stub_const("DomainValidator", Class.new(ApplicationImport::Validators::RowValidator))
+      result = parse({ "handler" => "UsersHandler", "file" => { "checker" => "UsersFileChecker" },
+                       "validators" => { "row" => [ { "class" => "DomainValidator" } ] } })
 
-      expect([ result[:handler], result[:file][:validator], result[:validators].first[:class] ])
+      expect([ result[:handler], result[:file][:checker], result[:validators][:row].first[:class] ])
         .to eq([ handler, validator, domain ])
     end
 
@@ -104,14 +104,30 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
       expect { parse({ "handler" => "String" }) }.to raise_error(ApplicationImport::Errors::InvalidHandlerError)
     end
 
-    it "raises InvalidFileValidatorError for a file validator not inheriting FileValidator" do
-      expect { parse({ "file" => { "validator" => "String" } }) }
-        .to raise_error(ApplicationImport::Errors::InvalidFileValidatorError)
+    it "raises InvalidFileCheckerError for a file checker not inheriting FileChecker" do
+      expect { parse({ "file" => { "checker" => "String" } }) }
+        .to raise_error(ApplicationImport::Errors::InvalidFileCheckerError)
     end
 
     it "raises InvalidClassError for a missing validator class" do
-      expect { parse({ "validators" => [ { "class" => "MissingValidator" } ] }) }
-        .to raise_error(ApplicationImport::Errors::InvalidClassError, "MissingValidator not found")
+      expect { parse({ "validators" => { "verify" => [ { "class" => "MissingValidator" } ] } }) }
+        .to raise_error(ApplicationImport::Errors::InvalidValidatorError, "MissingValidator not found")
+    end
+
+    it "raises InvalidValidatorError for a validator in the wrong stage" do
+      stub_const("RowCheck", Class.new(ApplicationImport::Validators::RowValidator))
+
+      expect { parse({ "validators" => { "rows" => [ { "class" => "RowCheck" } ] } }) }
+        .to raise_error(ApplicationImport::Errors::InvalidValidatorError,
+          "RowCheck must inherit from ApplicationImport::Validators::RowsValidator")
+    end
+
+    it "resolves built-in validator types to their classes" do
+      result = parse({ "validators" => { "rows" => [ { "type" => "unique_in_file", "keys" => [ "email" ] } ] } })
+
+      expect(result[:validators][:rows]).to eq([
+        { type: :unique_in_file, class: ApplicationImport::Validators::UniqueInFile, options: { keys: [ :email ] } }
+      ])
     end
 
     it "raises InvalidClassError for a model that is not an ActiveRecord model" do
@@ -123,8 +139,10 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
   it "parses configs/config.example.yml" do
     stub_const("User", Class.new(ApplicationRecord))
     stub_const("Imports::UsersHandler", Class.new(ApplicationImport::Handler))
-    stub_const("Imports::UsersFileValidator", Class.new(ApplicationImport::FileValidator))
-    stub_const("Imports::Users::DomainValidator", Class.new)
+    stub_const("Imports::UsersFileChecker", Class.new(ApplicationImport::FileChecker))
+    stub_const("Imports::Users::DomainValidator", Class.new(ApplicationImport::Validators::RowValidator))
+    stub_const("Imports::Users::FileDateValidator", Class.new(ApplicationImport::Validators::FileValidator))
+    stub_const("Imports::Users::ManagersExistValidator", Class.new(ApplicationImport::Validators::VerifyValidator))
     config = YAML.safe_load_file(Rails.root.join("lib/application_import/configs/config.example.yml"))
 
     result = described_class.new(:example, config).parse

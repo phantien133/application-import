@@ -31,8 +31,8 @@ module ApplicationImport
       freeze
     end
 
-    def file_validator_class
-      file[:validator]
+    def file_checker_class
+      file[:checker]
     end
 
     def max_rows
