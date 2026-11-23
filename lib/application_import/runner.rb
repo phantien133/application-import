@@ -6,6 +6,7 @@ module ApplicationImport
     include Constants
     include Logging
     include Rows
+    include RowMapping
 
     attr_reader :definition, :source, :context, :handler, :result, :cache
 
@@ -63,8 +64,12 @@ module ApplicationImport
       definition.on_error.action_for(error.code)
     end
 
+    # The file checker's errors halt at once: file validators and handler.validate_file
+    # only run on a file that passed the built-in checks (format, name, size).
     def validate_file
       file_checker.call(source, result)
+      halt! if result.file_errors?
+
       run_validators(:file, source)
       handler.validate_file(source, result)
       halt! if result.file_errors?

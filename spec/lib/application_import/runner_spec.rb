@@ -96,6 +96,30 @@ RSpec.describe ApplicationImport::Runner do
       expect([ result.status, result.errors.map(&:code) ]).to eq([ :failed, [ :invalid_format ] ])
       expect(runner.handler.calls.last).to eq([ :after_import, result ])
     end
+
+    it "halts right after the checker: file validators and handler.validate_file do not run" do
+      runner.call
+
+      expect(stage_log).to eq([])
+      expect(runner.handler.calls.map(&:first)).to eq([ :after_import ])
+    end
+  end
+
+  context "when the file checker passes but a file validator adds an error" do
+    before do
+      stub_const("ImportTestFileStageValidator", Class.new(ApplicationImport::Validators::FileValidator) do
+        define_method(:call) { |_source, result| result.add_file_error(:too_old, "file date too old") }
+      end)
+    end
+
+    let(:processor) { -> { raise "process must not run" } }
+
+    it "still runs handler.validate_file, then halts with every file error" do
+      result = runner.call
+
+      expect([ result.status, result.errors.map(&:code) ]).to eq([ :failed, [ :too_old ] ])
+      expect(runner.handler.calls.map(&:first)).to eq(%i[ validate_file after_import ])
+    end
   end
 
   context "when the handler rejects the file" do

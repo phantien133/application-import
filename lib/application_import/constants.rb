@@ -27,7 +27,8 @@ module ApplicationImport
     OUTPUT_MODES = %w[ raw database ].freeze
     ON_ERROR_MODES = %w[ abort skip ].freeze
     ROW_ERRORS = %w[ first all ].freeze
-    UNKNOWN_HEADERS = %w[ skip keep reject ].freeze
+    UNKNOWN_HEADERS = %w[ skip keep assign reject ].freeze
+    EXTRA_CELLS = %w[ warn ignore reject ].freeze
     EMAIL_FORMAT = "email".freeze
 
     DEFAULT_COLUMN_TYPE = "string".freeze
@@ -37,6 +38,7 @@ module ApplicationImport
     DEFAULT_ENCODING = "UTF-8".freeze
     DEFAULT_FORMAT = "csv".freeze
     DEFAULT_UNKNOWN_HEADERS = "skip".freeze
+    DEFAULT_EXTRA_CELLS = "warn".freeze
     DEFAULT_BATCH_SIZE = 1000
   end
 end

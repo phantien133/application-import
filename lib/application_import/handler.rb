@@ -28,11 +28,14 @@ module ApplicationImport
 
     # The record to validate and write: a new output.model with the declared columns
     # assigned (only those the model can set), or nil without output.model.
-    # Attributes of kept unknown headers (String keys) are never assigned here, so a
-    # file cannot set arbitrary model attributes; use them in an override if needed.
+    # Attributes of kept unknown headers (String keys) are not assigned, so a file cannot
+    # set arbitrary model attributes, unless file.unknown_headers is assign (see
+    # RecordBuilder); otherwise use them in an override if needed.
     def build_record(attributes, _row)
       model = definition.output[:model]
-      RecordBuilder.build(model, attributes, definition.columns) if model
+      return unless model
+
+      RecordBuilder.build(model, attributes, definition.columns, assign_unknown: definition.file[:unknown_headers] == :assign)
     end
 
     # Checks of one row on its own.

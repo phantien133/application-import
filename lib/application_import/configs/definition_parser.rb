@@ -5,8 +5,6 @@ module ApplicationImport
       include Constants
 
       ROOT_KEYS = %w[ handler file columns validators output on_error ].freeze
-      FILE_KEYS = %w[ checker formats name_pattern max_size format reader encoding headers require_all_headers unknown_headers csv xlsx ].freeze
-      XLSX_KEYS = %w[ sheet ].freeze
       OUTPUT_KEYS = %w[ mode model batch_size upsert ].freeze
       UPSERT_KEYS = %w[ conflict_target update ].freeze
 
@@ -19,6 +17,7 @@ module ApplicationImport
       def parse
         check_keys(@config, ROOT_KEYS, "config")
         parsed = parse_sections
+        check_assign(parsed)
         raise Errors::ConfigError, "#{@name}: #{@errors.join("; ")}" if @errors.any?
 
         resolve_classes(parsed)
@@ -32,7 +31,7 @@ module ApplicationImport
         @column_keys = columns.map(&:key)
         {
           handler: class_name(@config["handler"], "handler"),
-          file: parse_file(mapping(@config["file"], "file")),
+          file: FileParser.new(@config["file"], @errors).parse,
           columns:,
           validators: parse_validators,
           output: parse_output(mapping(@config["output"], "output")),
@@ -40,67 +39,14 @@ module ApplicationImport
         }
       end
 
+      def check_assign(parsed)
+        return unless parsed[:file][:unknown_headers] == :assign && parsed[:output][:model].nil?
+
+        add_error("file.unknown_headers", "assign needs output.model")
+      end
+
       def parse_validators
         ValidatorParser.new(@config["validators"], @column_keys, @errors).parse
-      end
-
-      def parse_file(file)
-        check_keys(file, FILE_KEYS, "file")
-        parsed = { checker: class_name(file["checker"], "file.checker"), **file_checks(file), **file_reading(file) }
-        check_format_allowed(parsed)
-        parsed
-      end
-
-      # Settings used by the FileChecker (nil = check skipped).
-      def file_checks(file)
-        {
-          formats: formats(file["formats"]),
-          name_pattern: regexp(file["name_pattern"], "file.name_pattern"),
-          max_size: optional_integer(file["max_size"], "file.max_size")
-        }
-      end
-
-      # Settings used by the reader: a custom `reader` class wins over the one `format` picks.
-      def file_reading(file)
-        {
-          format: one_of(file.fetch("format", DEFAULT_FORMAT), FORMATS, "file.format"),
-          reader: class_name(file["reader"], "file.reader"),
-          encoding: encoding(file.fetch("encoding", DEFAULT_ENCODING)),
-          headers: boolean(file.fetch("headers", true), "file.headers"),
-          require_all_headers: boolean(file.fetch("require_all_headers", false), "file.require_all_headers"),
-          unknown_headers: one_of(file.fetch("unknown_headers", DEFAULT_UNKNOWN_HEADERS), UNKNOWN_HEADERS, "file.unknown_headers"),
-          csv: CsvOptionsParser.new(file["csv"], @errors).parse,
-          xlsx: reader_options(file["xlsx"], XLSX_KEYS, "file.xlsx")
-        }
-      end
-
-      def check_format_allowed(parsed)
-        format, formats = parsed.values_at(:format, :formats)
-        return if format.nil? || formats.blank? || formats.include?(format)
-
-        add_error("file.format", "must be one of file.formats (#{formats.join(", ")})")
-      end
-
-      def optional_integer(value, path)
-        integer(value, path) unless value.nil?
-      end
-
-      def formats(value)
-        return if value.nil?
-
-        names(value, "file.formats").filter_map { |format| one_of(format, FORMATS, "file.formats") }.uniq
-      end
-
-      def encoding(value)
-        Encoding.find(value.to_s).name
-      rescue ArgumentError
-        add_error("file.encoding", "is not a known encoding: #{value}")
-      end
-
-      def reader_options(value, allowed, path)
-        options = mapping(value, path)
-        check_keys(options, allowed, path)
-        options.symbolize_keys
       end
 
       def parse_output(output)

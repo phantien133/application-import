@@ -151,6 +151,49 @@ RSpec.describe ApplicationImport::HeaderMapper do
         end
       end
 
+      context "with unknown_headers: assign" do
+        let(:file) { { "unknown_headers" => "assign" } }
+
+        before do
+          stub_const("HmUser", Class.new(ApplicationRecord) do
+            self.table_name = "hm_users"
+            class << self
+              def attribute_types
+                { "id" => nil, "email" => nil, "phone" => nil }
+              end
+
+              def primary_key
+                "id"
+              end
+            end
+          end)
+        end
+
+        def definition(file = {})
+          ApplicationImport::Definition.new(:users, {
+            "file" => file, "output" => { "model" => "HmUser" },
+            "columns" => { "email" => { "header" => "Email", "required" => true } }
+          })
+        end
+
+        it "keeps unknown headers like keep" do
+          header_map = map([ "Email", "Phone", "Note" ], file)
+
+          expect(header_map.attributes(%w[ a 1 n ])).to eq(:email => "a", "Phone" => "1", "Note" => "n")
+        end
+
+        it "logs which headers reach the record and warns about the others" do
+          map([ "Email", "Phone", "Note" ], file)
+
+          expect(log.string).to include("INFO", "assigning unknown headers to HmUser as they are: Phone")
+          expect(log.string).to include("WARN", "unknown headers not matching a HmUser attribute, kept but not assigned: Note")
+        end
+
+        it "keeps extra cells by position without header row" do
+          expect(map([], file.merge("headers" => false)).attributes(%w[ a b ])).to eq(:email => "a", "column_2" => "b")
+        end
+      end
+
       context "with unknown_headers: keep" do
         let(:file) { { "unknown_headers" => "keep" } }
 
@@ -180,6 +223,10 @@ RSpec.describe ApplicationImport::HeaderMapper do
           expect(errors.map(&:first)).to eq([ :missing_headers ])
         end
       end
+    end
+
+    it "sets the width to the header row size" do
+      expect(map(%w[ Email Age Other ]).width).to eq(3)
     end
 
     it "fills cells missing at the end of a row with nil and ignores extra cells" do
@@ -242,6 +289,10 @@ RSpec.describe ApplicationImport::HeaderMapper do
   end
 
   context "without a header row (headers: false)" do
+    it "sets the width to the column count, or none when extra cells are kept" do
+      expect([ map([], "headers" => false).width, map([], "headers" => false, "unknown_headers" => "keep").width ]).to eq([ 3, nil ])
+    end
+
     it "maps cells to columns by position, ignoring headers and extra cells" do
       header_map = map(%w[ whatever ], "headers" => false)
 

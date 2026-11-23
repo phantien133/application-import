@@ -278,7 +278,105 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
     end
 
     it "rejects other values" do
-      expect(config_error(file: { "unknown_headers" => "drop" })).to eq("users: file.unknown_headers must be one of skip, keep, reject")
+      expect(config_error(file: { "unknown_headers" => "drop" })).to eq("users: file.unknown_headers must be one of skip, keep, assign, reject")
+    end
+  end
+
+  describe "file.extra_cells" do
+    let(:content) { "Email,Name\na@x.io,Ann,extra\nb@x.io,Bob\nc@x.io,Cy,x,y\n" }
+
+    def rows_of(file)
+      captured = []
+      stub_const("RawRunner", Class.new(ApplicationImport::Runner) { define_method(:write_rows) { captured.concat(rows) } })
+      result = ApplicationImport.run(definition(file:), StringIO.new(content), filename: "users.csv", runner: "RawRunner", logger:)
+      [ result, captured ]
+    end
+
+    it "warns by default and with warn, keeping the extra cells in raw only" do
+      [ {}, { "extra_cells" => "warn" } ].each do |file|
+        result, rows = rows_of(file)
+
+        expect([ result.status, rows.map(&:raw), rows.map(&:attributes) ]).to eq([
+          :completed, [ %w[ a@x.io Ann extra ], %w[ b@x.io Bob ], %w[ c@x.io Cy x y ] ],
+          [ ann, { email: "b@x.io", name: "Bob" }, { email: "c@x.io", name: "Cy" } ]
+        ])
+      end
+      expect(log.string.scan("line 2 has 1 cells more than the headers").size).to eq(2)
+      expect(log.string).to include("2 rows have cells more than the headers")
+    end
+
+    it "says nothing with ignore" do
+      result, = rows_of("extra_cells" => "ignore")
+
+      expect(result.status).to eq(:completed)
+      expect(log.string).not_to include("cells more than the headers")
+    end
+
+    it "halts with a file error at the first such row with reject, like a file checker error" do
+      result, rows = rows_of("extra_cells" => "reject", "unknown_headers" => "skip")
+
+      expect([ result.status, result.errors.map { |e| [ e.code, e.line, e.message, e.details ] }, rows ]).to eq([
+        :failed, [ [ :extra_cells, nil, "line 2 has 1 cells more than the headers", { line: 2, cells: { 3 => "extra" } } ] ], []
+      ])
+    end
+
+    it "ignores trailing blank cells" do
+      expect(outcome("Email,Name\na@x.io,Ann,,\n", file: { "extra_cells" => "reject" })).to eq(ok(ann))
+    end
+
+    it "does not apply when unknown cells are kept without header row" do
+      expect(outcome("a@x.io,Ann,x\n", file: { "headers" => false, "unknown_headers" => "keep", "extra_cells" => "reject" }))
+        .to eq(ok(ann.merge("column_3" => "x")))
+    end
+
+    it "rejects other values" do
+      expect(config_error(file: { "extra_cells" => "drop" })).to eq("users: file.extra_cells must be one of warn, ignore, reject")
+    end
+  end
+
+  describe "file.unknown_headers: assign" do
+    before do
+      ActiveRecord::Base.connection.create_table(:assign_spec_users, temporary: true) do |t|
+        t.string :email
+        t.string :phone
+        t.integer :score
+      end
+      stub_const("AssignSpecUser", Class.new(ApplicationRecord) do
+        self.table_name = "assign_spec_users"
+        validates :phone, presence: true
+      end)
+    end
+
+    def records(content, **config)
+      captured = []
+      stub_const("RecordRunner", Class.new(ApplicationImport::Runner) { define_method(:write_rows) { captured.concat(rows.map(&:record)) } })
+      definition = definition(file: { "unknown_headers" => "assign" }, output: { "model" => "AssignSpecUser" }, **config)
+      result = ApplicationImport.run(definition, StringIO.new(content), filename: "users.csv", runner: "RecordRunner", logger:)
+      [ result, captured ]
+    end
+
+    it "assigns unknown headers naming a model attribute straight to the record, without cast or rules" do
+      result, records = records("Email,Name,Phone,Score,Note\na@x.io,Ann, 090 ,7,hi\n")
+
+      expect(result.status).to eq(:completed)
+      expect(records.map { |r| [ r.email, r.phone, r.score ] }).to eq([ [ "a@x.io", " 090 ", 7 ] ])
+      expect(log.string).to include("not matching a AssignSpecUser attribute, kept but not assigned: Note")
+    end
+
+    it "lets the model validations see the assigned values" do
+      result, = records("Email,Name,Phone\na@x.io,Ann,\n", validators: { "row" => [ { "type" => "model" } ] }, on_error: "skip")
+
+      expect(result.errors.map { |e| [ e.code, e.column ] }).to eq([ [ :blank, "phone" ] ])
+    end
+
+    it "never assigns with keep" do
+      _, records = records("Email,Name,Phone\na@x.io,Ann,090\n", file: { "unknown_headers" => "keep" })
+
+      expect(records.first.phone).to be_nil
+    end
+
+    it "needs output.model" do
+      expect(config_error(file: { "unknown_headers" => "assign" })).to eq("users: file.unknown_headers assign needs output.model")
     end
   end
 

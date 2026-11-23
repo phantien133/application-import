@@ -31,6 +31,7 @@ module ApplicationImport
 
       def process
         reader.each { |raw| process_row(raw) }
+        warn_extra_cells_total
         info("processed #{result.stats[:total]} rows from #{source.filename}")
       end
 
@@ -45,48 +46,7 @@ module ApplicationImport
 
       # The steps of one row, in order; each may report errors on the row.
       def row_checks(row)
-        [ -> { cast_row(row) }, -> { map_row(row) }, *row_stage(row), *rows_stage(row) ]
-      end
-
-      # One check for the whole row: every declared column is cast and checked against
-      # its rules (errors of all columns are collected); kept unknown headers are left as is.
-      def cast_row(row)
-        definition.columns.each do |column|
-          next unless row.attributes.key?(column.key)
-
-          cast_column(row, column)
-        end
-      end
-
-      def cast_column(row, column)
-        key = column.key
-        raw = row.attributes[key]
-        value = row.attributes[key] = caster.call(column, raw)
-        ColumnRules.errors(column, value).each { |code, message| row.add_error(code:, message:, column: key) }
-      rescue Caster::Invalid => e
-        row.add_error(code: :invalid_type, message: e.message, column: key, details: { value: raw })
-      end
-
-      def caster
-        @caster ||= Caster.new(definition, logger:)
-      end
-
-      def row_stage(row)
-        checks = validators(:row).map { |validator| -> { guard(row) { validator.call(row, result) } } }
-        checks << -> { guard(row) { handler.validate_row(row, result) } }
-      end
-
-      def rows_stage(row)
-        checks = validators(:rows).map { |validator| -> { guard(row) { validator.call(row, result, cache) } } }
-        checks << -> { guard(row) { handler.validate_rows(row, result, cache) } }
-      end
-
-      # A custom reader that never calls on_headers gets its headers mapped at the first row.
-      def build_row(raw)
-        map_headers(Array(reader.headers)) unless @header_map
-        result.increment(:total)
-        row = Row.new(line: raw.line, attributes: @header_map.attributes(raw.values), raw: raw.values)
-        @rows_by_line[row.line] = row
+        [ -> { check_extra_cells(row) }, -> { cast_row(row) }, -> { map_row(row) }, *row_stage(row), *rows_stage(row) ]
       end
 
       def map_row(row)

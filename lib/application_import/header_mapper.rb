@@ -15,12 +15,16 @@ module ApplicationImport
   #   - unknown headers, per file.unknown_headers:
   #       skip (default) -> ignored (logged)
   #       keep           -> passed through as attributes keyed by the header String
+  #       assign         -> like keep, and the record builder assigns those matching a
+  #                         model attribute (header downcased, spaces -> _) straight to
+  #                         the record, without cast or rules; the others are warned
+  #                         about (needs output.model)
   #       reject         -> file error unknown_headers
-  #     blank headers are ignored (warned) by keep and reject
+  #     blank headers are ignored (warned) by keep, assign and reject
   # Exact headers (every column, nothing else): require_all_headers: true +
   # unknown_headers: reject.
   # Without a header row (file.headers: false), cells map to columns by position; with
-  # keep, the extra cells are kept as "column_<n>".
+  # keep / assign, the extra cells are kept as "column_<n>".
   # Errors are added to the result (all of them); the caller halts on file errors.
   class HeaderMapper
     include Logging
@@ -49,7 +53,11 @@ module ApplicationImport
     end
 
     def keep_unknown?
-      definition.file[:unknown_headers] == :keep
+      %i[ keep assign ].include?(definition.file[:unknown_headers])
+    end
+
+    def assign_unknown?
+      definition.file[:unknown_headers] == :assign
     end
 
     def unknown_headers
@@ -58,6 +66,10 @@ module ApplicationImport
 
     def column_keys
       definition.columns.map(&:key)
+    end
+
+    def model
+      definition.output[:model]
     end
 
     # Exposes the private log helpers to the Matcher.
@@ -69,7 +81,9 @@ module ApplicationImport
 
     def positional_map
       indexes = column_keys.each_with_index.to_h { |key, index| [ index, key ] }
-      HeaderMap.new(column_keys:, indexes:, keep_extra_from: keep_unknown? ? column_keys.size : nil)
+      return HeaderMap.new(column_keys:, indexes:, keep_extra_from: column_keys.size) if keep_unknown?
+
+      HeaderMap.new(column_keys:, indexes:, width: column_keys.size)
     end
 
     # One matching pass over the header row.
@@ -87,7 +101,7 @@ module ApplicationImport
         @headers.each_with_index { |header, index| match(header.to_s.strip, index) }
         check_missing
         handle_unknown
-        HeaderMap.new(column_keys: @mapper.column_keys, indexes: @indexes)
+        HeaderMap.new(column_keys: @mapper.column_keys, indexes: @indexes, width: @headers.size)
       end
 
       private
@@ -145,6 +159,7 @@ module ApplicationImport
 
         case @mapper.unknown_headers
         when :keep then keep_unknown(named_unknown)
+        when :assign then assign_unknown(named_unknown)
         when :reject then reject_unknown(named_unknown)
         else @mapper.log(:info, "ignoring unknown headers: #{@unknown.map(&:first).join(", ")}")
         end
@@ -161,6 +176,17 @@ module ApplicationImport
 
         names = named.map(&:first)
         @result.add_file_error(:unknown_headers, "unknown headers: #{names.join(", ")}", details: { headers: names })
+      end
+
+      # Kept like keep; tells which headers will reach the record and warns about the rest.
+      def assign_unknown(named)
+        keep_unknown(named)
+        assigned, others = named.map(&:first).partition { |header| RecordBuilder.attribute_for(@mapper.model, header) }
+        @mapper.log(:info, "assigning unknown headers to #{@mapper.model.name} as they are: #{assigned.join(", ")}") if assigned.any?
+        if others.any?
+          @mapper.log(:warn, "unknown headers not matching a #{@mapper.model.name} attribute, kept but not assigned: " \
+                             "#{others.join(", ")}")
+        end
       end
 
       def keep_unknown(named)

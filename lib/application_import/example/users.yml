@@ -14,8 +14,10 @@ file:
   encoding: "UTF-8"   # a BOM (UTF-8/UTF-16) overrides it
   headers: true       # false: no header row, cells map to columns in the order below
   require_all_headers: false   # true: every column below must have a header (default: only required ones)
-  unknown_headers: skip   # headers not in columns: skip (default) | keep (attributes keyed by header) | reject (error)
+  unknown_headers: skip   # headers not in columns: skip (default) | keep (attributes keyed by header)
+                          # | assign (keep + set matching output.model attributes as read, no cast) | reject (error)
   # exact headers (all columns, nothing extra): require_all_headers: true + unknown_headers: reject
+  extra_cells: warn       # cells beyond the headers (kept in row.raw): warn (default) | ignore | reject (file error, halts)
   csv:                       # CSV.new options; encoding is file.encoding, not here
     col_sep: ","
     quote_char: '"'

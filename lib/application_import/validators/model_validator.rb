@@ -33,7 +33,9 @@ module ApplicationImport
       private
 
       def record_for(row)
-        row.record.is_a?(model) ? row.record : RecordBuilder.build(model, row.attributes, definition.columns)
+        return row.record if row.record.is_a?(model)
+
+        RecordBuilder.build(model, row.attributes, definition.columns, assign_unknown: definition.file[:unknown_headers] == :assign)
       end
 
       def add_error(row, error)

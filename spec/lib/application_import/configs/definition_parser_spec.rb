@@ -25,7 +25,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     expect(result.except(:columns)).to eq(
       handler: ApplicationImport::Handler,
       file: { checker: ApplicationImport::FileChecker, formats: nil, name_pattern: nil, max_size: nil,
-              format: :csv, reader: nil, encoding: "UTF-8", headers: true, require_all_headers: false, unknown_headers: :skip, csv: {}, xlsx: {} },
+              format: :csv, reader: nil, encoding: "UTF-8", headers: true, require_all_headers: false, unknown_headers: :skip, extra_cells: :warn, csv: {}, xlsx: {} },
       validators: { file: [], row: [], rows: [], verify: [] },
       output: { mode: :raw, model: nil, batch_size: 1000, upsert: nil },
       on_error: ApplicationImport::ErrorPolicy.new
@@ -50,11 +50,11 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
 
   it "parses file options" do
     file = parse({ "file" => { "formats" => [ "csv", "xlsx", "csv" ], "name_pattern" => '\Ausers\.csv\z', "max_size" => 1,
-                               "format" => "xlsx", "encoding" => "shift_jis", "headers" => false, "require_all_headers" => true, "unknown_headers" => "keep", "csv" => { "col_sep" => ";" },
+                               "format" => "xlsx", "encoding" => "shift_jis", "headers" => false, "require_all_headers" => true, "unknown_headers" => "keep", "extra_cells" => "reject", "csv" => { "col_sep" => ";" },
                                "xlsx" => { "sheet" => "Data" } } })[:file]
 
     expect(file.except(:checker)).to eq(formats: %i[ csv xlsx ], name_pattern: /\Ausers\.csv\z/, max_size: 1,
-      format: :xlsx, reader: nil, encoding: "Shift_JIS", headers: false, require_all_headers: true, unknown_headers: :keep, csv: { col_sep: ";" }, xlsx: { sheet: "Data" })
+      format: :xlsx, reader: nil, encoding: "Shift_JIS", headers: false, require_all_headers: true, unknown_headers: :keep, extra_cells: :reject, csv: { col_sep: ";" }, xlsx: { sheet: "Data" })
   end
 
   it "requires file.format to be an allowed format" do
@@ -67,7 +67,15 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
   end
 
   it "rejects an unknown file.unknown_headers" do
-    expect(config_error({ "file" => { "unknown_headers" => "drop" } })).to eq([ "file.unknown_headers must be one of skip, keep, reject" ])
+    expect(config_error({ "file" => { "unknown_headers" => "drop" } })).to eq([ "file.unknown_headers must be one of skip, keep, assign, reject" ])
+  end
+
+  it "rejects an unknown file.extra_cells" do
+    expect(config_error({ "file" => { "extra_cells" => "drop" } })).to eq([ "file.extra_cells must be one of warn, ignore, reject" ])
+  end
+
+  it "requires output.model for unknown_headers: assign" do
+    expect(config_error({ "file" => { "unknown_headers" => "assign" } })).to eq([ "file.unknown_headers assign needs output.model" ])
   end
 
   it "rejects an unknown file.format" do
