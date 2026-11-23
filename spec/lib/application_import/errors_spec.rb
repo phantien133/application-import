@@ -10,6 +10,7 @@ RSpec.describe ApplicationImport::Errors do
       ApplicationImport::Errors::InvalidHandlerError => ApplicationImport::Errors::InvalidClassError,
       ApplicationImport::Errors::InvalidRunnerError => ApplicationImport::Errors::InvalidClassError,
       ApplicationImport::Errors::InvalidFileCheckerError => ApplicationImport::Errors::InvalidClassError,
+      ApplicationImport::Errors::InvalidReaderError => ApplicationImport::Errors::InvalidClassError,
       ApplicationImport::Errors::InvalidValidatorError => ApplicationImport::Errors::InvalidClassError
     }.each do |error_class, parent|
       it "#{error_class.name.demodulize} inherits #{parent.name}" do
@@ -98,6 +99,7 @@ RSpec.describe ApplicationImport::Errors do
     ApplicationImport::Errors::InvalidHandlerError => [ :handler, "ApplicationImport::Handler" ],
     ApplicationImport::Errors::InvalidRunnerError => [ :runner, "ApplicationImport::Runner" ],
     ApplicationImport::Errors::InvalidFileCheckerError => [ :file_checker, "ApplicationImport::FileChecker" ],
+    ApplicationImport::Errors::InvalidReaderError => [ :reader, "ApplicationImport::Readers::Base" ],
     ApplicationImport::Errors::InvalidValidatorError => [ :validator, "ApplicationImport::Validators::Base" ]
   }.each do |error_class, (keyword, base)|
     describe error_class do

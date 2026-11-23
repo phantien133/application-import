@@ -6,14 +6,24 @@ handler: Imports::UsersHandler
 file:
   checker: Imports::UsersFileChecker
 
+  format: csv          # built-in reader: csv (default) | xlsx (not implemented yet)
+  # reader: Imports::UsersReader   # custom reader (< ApplicationImport::Readers::Base), overrides format
   formats: [ csv, xlsx ]
   name_pattern: '\Ausers_\d{8}\.(csv|xlsx)\z'
   max_size: 10485760
   max_rows: 100000
-  encoding: "UTF-8"
-  csv:
+  encoding: "UTF-8"   # a BOM (UTF-8/UTF-16) overrides it
+  headers: true       # false: no header row, cells map to columns in the order below
+  csv:                       # CSV.new options; encoding is file.encoding, not here
     col_sep: ","
     quote_char: '"'
+    # row_sep: "\r\n"        # default: auto-detect
+    liberal_parsing: false
+    strip: true               # or the characters to strip, e.g. " \t"
+    skip_lines: '\A#'         # regexp: skip comment lines
+    max_field_size: 10000
+    # passthrough:            # handed to CSV.new as-is, NOT validated, overrides the above
+    #   nil_value: ""
   xlsx:
     sheet: 0
 columns:

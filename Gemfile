@@ -35,6 +35,9 @@ gem "thruster", require: false
 # Bulk insert/upsert of Active Record models [https://github.com/zdennis/activerecord-import]
 gem "activerecord-import", "~> 3.0"
 
+# CSV parsing for imports (bundled gem since Ruby 3.4, must be declared) [https://github.com/ruby/csv]
+gem "csv", "~> 3.3"
+
 group :development, :test do
   # Load .env into ENV [https://github.com/bkeepers/dotenv]
   gem "dotenv"

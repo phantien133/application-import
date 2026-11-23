@@ -1,5 +1,5 @@
 RSpec.describe ApplicationImport::Runner do
-  let(:source) { Object.new }
+  let(:source) { ApplicationImport::Source.new(filename: "users.csv", io: StringIO.new(content)) }
   let(:definition) do
     ApplicationImport::Definition.new(:users, {
       "handler" => "ImportTestHandler",
@@ -13,8 +13,20 @@ RSpec.describe ApplicationImport::Runner do
   let(:processor) { -> { result.increment(:total) } }
   let(:runner) do
     process = processor
-    Class.new(described_class) { define_method(:process) { instance_exec(&process) } }
-      .new(definition, source, context: { user_id: 1 })
+    read = stub_read_file? && -> { }
+    Class.new(described_class) do
+      define_method(:process) { instance_exec(&process) }
+      define_method(:read_file) { instance_exec(&read) } if read
+    end.new(definition, source, context: { user_id: 1 })
+  end
+
+  def content
+    "email\na@example.com\nb@example.com\n"
+  end
+
+  # Orchestration examples stub the read step; "reading the file" uses the real reader.
+  def stub_read_file?
+    true
   end
 
   def stage_log
@@ -239,6 +251,81 @@ RSpec.describe ApplicationImport::Runner do
     it "still calls after_import and re-raises" do
       expect { runner.call }.to raise_error(RuntimeError, "boom")
       expect(runner.handler.calls.last).to eq([ :after_import, runner.result ])
+    end
+  end
+
+  describe "reading the file" do
+    let(:processor) { -> { } }
+
+    def stub_read_file?
+      false
+    end
+
+    it "reads data rows through the definition's reader after validate_file, before process" do
+      seen = []
+      ImportTestHandler.define_method(:validate_file) { |_source, _result| seen << :validate_file }
+      runner.singleton_class.define_method(:process) { seen << [ :process, rows.map(&:line) ] }
+
+      result = runner.call
+
+      expect([ result.status, result.stats[:total], runner.reader.class ]).to eq([ :completed, 2, ApplicationImport::Readers::Csv ])
+      expect(runner.rows).to eq([
+        ApplicationImport::Readers::RawRow.new(line: 2, values: [ "a@example.com" ]),
+        ApplicationImport::Readers::RawRow.new(line: 3, values: [ "b@example.com" ])
+      ])
+      expect(seen).to eq([ :validate_file, [ :process, [ 2, 3 ] ] ])
+    end
+
+    it "logs how many rows were read" do
+      log = StringIO.new
+      runner = described_class.new(definition, source, logger: ActiveSupport::Logger.new(log))
+      runner.singleton_class.define_method(:process) { nil }
+      runner.call
+
+      expect(log.string).to include("[ApplicationImport::Runner:users] read 2 rows from users.csv")
+    end
+
+    context "when reading raises a FileError" do
+      def content
+        "email\n\xFF\n".b
+      end
+
+      let(:processor) { -> { raise "process must not run" } }
+
+      it "halts with the file error" do
+        result = runner.call
+
+        expect([ result.status, result.errors.map(&:code), runner.rows ]).to eq([ :failed, [ :invalid_encoding ], [] ])
+        expect(runner.handler.calls.last).to eq([ :after_import, result ])
+      end
+    end
+
+    context "when the file checker rejects the file" do
+      let(:file_validation) { ->(_source, result) { result.add_file_error(:invalid_name, "bad name") } }
+
+      it "does not read it" do
+        runner.call
+
+        expect([ runner.rows, runner.instance_variable_get(:@reader) ]).to eq([ [], nil ])
+      end
+    end
+
+    it "uses a custom reader from the definition" do
+      stub_const("UpcaseReader", Class.new(ApplicationImport::Readers::Csv) do
+        private
+
+        def each_record
+          super { |line, values| yield line, values.map(&:upcase) }
+        end
+      end)
+      definition = ApplicationImport::Definition.new(:users, {
+        "file" => { "checker" => "ImportTestFileChecker", "reader" => "UpcaseReader" }, "columns" => { "email" => nil }
+      })
+      runner = Class.new(described_class) { define_method(:process) { nil } }.new(definition, source)
+
+      runner.call
+
+      expect(runner.rows.map(&:values)).to eq([ [ "A@EXAMPLE.COM" ], [ "B@EXAMPLE.COM" ] ])
     end
   end
 

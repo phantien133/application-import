@@ -32,6 +32,7 @@ module ApplicationImport
     DEFAULT_OUTPUT_MODE = "raw".freeze
     DEFAULT_ON_ERROR = "abort".freeze
     DEFAULT_ENCODING = "UTF-8".freeze
+    DEFAULT_FORMAT = "csv".freeze
     DEFAULT_MAX_ROWS = 100_000
     DEFAULT_BATCH_SIZE = 1000
   end

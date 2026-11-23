@@ -5,8 +5,7 @@ module ApplicationImport
       include Constants
 
       ROOT_KEYS = %w[ handler file columns validators output on_error ].freeze
-      FILE_KEYS = %w[ checker formats name_pattern max_size max_rows encoding csv xlsx ].freeze
-      CSV_KEYS = %w[ col_sep quote_char row_sep ].freeze
+      FILE_KEYS = %w[ checker formats name_pattern max_size format reader max_rows encoding headers csv xlsx ].freeze
       XLSX_KEYS = %w[ sheet ].freeze
       OUTPUT_KEYS = %w[ mode model batch_size upsert ].freeze
       UPSERT_KEYS = %w[ conflict_target update ].freeze
@@ -47,16 +46,38 @@ module ApplicationImport
 
       def parse_file(file)
         check_keys(file, FILE_KEYS, "file")
+        parsed = { checker: class_name(file["checker"], "file.checker"), **file_checks(file), **file_reading(file) }
+        check_format_allowed(parsed)
+        parsed
+      end
+
+      # Settings used by the FileChecker (nil = check skipped).
+      def file_checks(file)
         {
-          checker: class_name(file["checker"], "file.checker"),
           formats: formats(file["formats"]),
           name_pattern: regexp(file["name_pattern"], "file.name_pattern"),
-          max_size: optional_integer(file["max_size"], "file.max_size"),
+          max_size: optional_integer(file["max_size"], "file.max_size")
+        }
+      end
+
+      # Settings used by the reader: a custom `reader` class wins over the one `format` picks.
+      def file_reading(file)
+        {
+          format: one_of(file.fetch("format", DEFAULT_FORMAT), FORMATS, "file.format"),
+          reader: class_name(file["reader"], "file.reader"),
           max_rows: integer(file.fetch("max_rows", DEFAULT_MAX_ROWS), "file.max_rows"),
           encoding: encoding(file.fetch("encoding", DEFAULT_ENCODING)),
-          csv: reader_options(file["csv"], CSV_KEYS, "file.csv"),
+          headers: boolean(file.fetch("headers", true), "file.headers"),
+          csv: CsvOptionsParser.new(file["csv"], @errors).parse,
           xlsx: reader_options(file["xlsx"], XLSX_KEYS, "file.xlsx")
         }
+      end
+
+      def check_format_allowed(parsed)
+        format, formats = parsed.values_at(:format, :formats)
+        return if format.nil? || formats.blank? || formats.include?(format)
+
+        add_error("file.format", "must be one of file.formats (#{formats.join(", ")})")
       end
 
       def optional_integer(value, path)
@@ -107,6 +128,7 @@ module ApplicationImport
       def resolve_classes(parsed)
         parsed[:handler] = resolve(parsed[:handler], Handler, Errors::InvalidHandlerError)
         parsed[:file][:checker] = resolve(parsed[:file][:checker], FileChecker, Errors::InvalidFileCheckerError)
+        parsed[:file][:reader] = ClassResolver.resolve!(parsed[:file][:reader], base: Readers::Base, error: Errors::InvalidReaderError)
         resolve_references(parsed)
       end
 

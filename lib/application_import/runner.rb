@@ -3,7 +3,7 @@ module ApplicationImport
     include Constants
     include Logging
 
-    attr_reader :definition, :source, :context, :handler, :result
+    attr_reader :definition, :source, :context, :handler, :result, :rows
 
     def initialize(definition, source, context: {}, logger: ApplicationImport.logger)
       @definition = definition
@@ -12,6 +12,12 @@ module ApplicationImport
       @context = context.dup.freeze
       @handler = definition.handler_class.new(definition, @context)
       @result = Result.new
+      @rows = []
+    end
+
+    # definition.reader_class: file.reader, or the built-in reader for file.format.
+    def reader
+      @reader ||= definition.reader_class.new(definition, source, logger:)
     end
 
     def call
@@ -25,6 +31,7 @@ module ApplicationImport
 
     def run_steps
       step { validate_file }
+      step { read_file }
       step { process }
     end
 
@@ -58,6 +65,19 @@ module ApplicationImport
       definition.file_checker_class.new(definition, logger:)
     end
 
+    # Streams the data rows through the reader (encoding gate, headers, max_rows);
+    # a FileError raised while reading halts the import.
+    def read_file
+      reader.each { |raw| read_row(raw) }
+      info("read #{rows.size} rows from #{source.filename}")
+    end
+
+    def read_row(raw)
+      result.increment(:total)
+      rows << raw
+    end
+
+    # Next stages (header mapping, casting, validators, write) work on #rows.
     def process
       raise NotImplementedError, "#{self.class.name}#process"
     end

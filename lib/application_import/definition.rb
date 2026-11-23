@@ -59,6 +59,11 @@ module ApplicationImport
       file[:checker]
     end
 
+    # file.reader when configured, else the built-in reader for file.format.
+    def reader_class
+      file[:reader] || Readers.reader_class(file[:format])
+    end
+
     def max_rows
       file[:max_rows]
     end

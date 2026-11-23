@@ -4,7 +4,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
   let(:invalid_config) do
     {
       "unknown" => 1, "on_error" => "ignore", "handler" => 1,
-      "file" => { "formats" => [ "pdf" ], "max_size" => 0, "encoding" => "nope", "csv" => { "sep" => "," }, "extra" => 1 },
+      "file" => { "formats" => [ "pdf" ], "max_size" => 0, "encoding" => "nope", "headers" => "yes", "csv" => { "sep" => "," }, "extra" => 1 },
       "output" => { "mode" => "database", "batch_size" => "x", "upsert" => { "update" => [ "age" ] } }
     }
   end
@@ -25,7 +25,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     expect(result.except(:columns)).to eq(
       handler: ApplicationImport::Handler,
       file: { checker: ApplicationImport::FileChecker, formats: nil, name_pattern: nil, max_size: nil, max_rows: 100_000,
-              encoding: "UTF-8", csv: {}, xlsx: {} },
+              format: :csv, reader: nil, encoding: "UTF-8", headers: true, csv: {}, xlsx: {} },
       validators: { file: [], row: [], rows: [], verify: [] },
       output: { mode: :raw, model: nil, batch_size: 1000, upsert: nil },
       on_error: ApplicationImport::ErrorPolicy.new
@@ -50,11 +50,20 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
 
   it "parses file options" do
     file = parse({ "file" => { "formats" => [ "csv", "xlsx", "csv" ], "name_pattern" => '\Ausers\.csv\z', "max_size" => 1,
-                               "max_rows" => 2, "encoding" => "shift_jis", "csv" => { "col_sep" => ";" },
+                               "max_rows" => 2, "format" => "xlsx", "encoding" => "shift_jis", "headers" => false, "csv" => { "col_sep" => ";" },
                                "xlsx" => { "sheet" => "Data" } } })[:file]
 
     expect(file.except(:checker)).to eq(formats: %i[ csv xlsx ], name_pattern: /\Ausers\.csv\z/, max_size: 1, max_rows: 2,
-      encoding: "Shift_JIS", csv: { col_sep: ";" }, xlsx: { sheet: "Data" })
+      format: :xlsx, reader: nil, encoding: "Shift_JIS", headers: false, csv: { col_sep: ";" }, xlsx: { sheet: "Data" })
+  end
+
+  it "requires file.format to be an allowed format" do
+    expect(config_error({ "file" => { "formats" => [ "csv" ], "format" => "xlsx" } }))
+      .to eq([ "file.format must be one of file.formats (csv)" ])
+  end
+
+  it "rejects an unknown file.format" do
+    expect(config_error({ "file" => { "format" => "pdf" } })).to eq([ "file.format must be one of csv, xlsx" ])
   end
 
   it "collects every error into one ConfigError" do
@@ -65,6 +74,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
       "file.formats must be one of csv, xlsx",
       "file.max_size must be an integer >= 1",
       "file.encoding is not a known encoding: nope",
+      "file.headers must be true or false",
       "file.csv has unknown keys: sep",
       "output.model is required when mode is database",
       "output.batch_size must be an integer >= 1",
@@ -107,6 +117,17 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     it "raises InvalidFileCheckerError for a file checker not inheriting FileChecker" do
       expect { parse({ "file" => { "checker" => "String" } }) }
         .to raise_error(ApplicationImport::Errors::InvalidFileCheckerError)
+    end
+
+    it "resolves a custom reader" do
+      reader = stub_const("UsersReader", Class.new(ApplicationImport::Readers::Base))
+
+      expect(parse({ "file" => { "reader" => "UsersReader" } })[:file][:reader]).to eq(reader)
+    end
+
+    it "raises InvalidReaderError for a reader not inheriting Readers::Base" do
+      expect { parse({ "file" => { "reader" => "String" } }) }
+        .to raise_error(ApplicationImport::Errors::InvalidReaderError, "String must inherit from ApplicationImport::Readers::Base")
     end
 
     it "raises InvalidClassError for a missing validator class" do

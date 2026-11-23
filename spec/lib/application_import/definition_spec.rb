@@ -129,6 +129,19 @@ RSpec.describe ApplicationImport::Definition do
     end
   end
 
+  describe "#reader_class" do
+    it "is file[:reader] when set" do
+      reader = stub_const("UsersReader", Class.new(ApplicationImport::Readers::Base))
+
+      expect(build(file: { reader:, format: :csv }).reader_class).to eq(reader)
+    end
+
+    it "falls back to the built-in reader for file[:format], csv by default" do
+      expect([ build(file: { format: :xlsx }).reader_class, build(file: {}).reader_class ])
+        .to eq([ ApplicationImport::Readers::Xlsx, ApplicationImport::Readers::Csv ])
+    end
+  end
+
   describe "#max_rows" do
     it "reads file[:max_rows]" do
       expect(build.max_rows).to eq(100)
