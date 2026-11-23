@@ -65,7 +65,9 @@ columns:
     caster: Imports::PhoneCaster   # custom caster (< ApplicationImport::Casters::Base) instead of the type's
   role:
     header: "Role"
-    inclusion: [ admin, member, guest ]
+    # inclusion is checked on the value in the file, before the map transformer below
+    # (which already rejects unknown labels with strict: true)
+    inclusion: [ "Quản trị", "Thành viên", admin, member, guest ]
 
   joined_on:
     header: "Joined"

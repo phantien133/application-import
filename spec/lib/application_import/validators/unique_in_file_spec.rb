@@ -74,4 +74,32 @@ RSpec.describe ApplicationImport::Validators::UniqueInFile do
     expect([ validator.keys, validator.case_sensitive?, described_class.new(definition, { keys: [ :email ] }).case_sensitive? ])
       .to eq([ [ :email ], false, true ])
   end
+
+  describe "rows with errors" do
+    let(:definition) do
+      ApplicationImport::Definition.new(:users, { "columns" => { "email" => nil, "name" => nil }, "on_error" => { "allow" => [ "minor" ] } })
+    end
+
+    def errored(line, code)
+      ApplicationImport::Row.new(line:, attributes: { email: "a" }, raw: []).add_error(code:, message: "x")
+    end
+
+    it "neither checks nor remembers a row with an error that is not allowed" do
+      validator = described_class.new(definition, { keys: [ :email ] })
+      dropped = errored(2, :required)
+      later = ApplicationImport::Row.new(line: 3, attributes: { email: "a" }, raw: [])
+      [ dropped, later ].each { |row| validator.call(row, result, {}) }
+
+      expect([ dropped.errors.map(&:code), later.errors ]).to eq([ %i[ required ], [] ])
+    end
+
+    it "still checks rows whose errors are all allowed (they are written)" do
+      validator = described_class.new(definition, { keys: [ :email ] })
+      first = ApplicationImport::Row.new(line: 2, attributes: { email: "a" }, raw: [])
+      allowed = errored(3, :minor)
+      [ first, allowed ].each { |row| validator.call(row, result, {}) }
+
+      expect(allowed.errors.map(&:code)).to eq(%i[ minor duplicate ])
+    end
+  end
 end

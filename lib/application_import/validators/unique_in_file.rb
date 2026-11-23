@@ -6,11 +6,14 @@ module ApplicationImport
     #                   or a mapper, the names they produce. A key missing from the row's
     #                   attributes raises Errors::ConfigError (the run fails).
     #   case_sensitive: compare String values with case (default true)
-    # Rows with a blank key value are not checked. Rows that stopped before this check
-    # (errors under row_errors: first) are not remembered.
+    # Rows with a blank key value, and rows with an error that is not allowed (dropped or
+    # about to be, e.g. under row_errors: all), are neither checked nor remembered, so
+    # they cannot make a valid later row a duplicate.
     class UniqueInFile < RowsValidator
       def call(row, _result, _cache)
         check_keys(row)
+        return if dropped?(row)
+
         values = key_values(row)
         return if values.nil?
 
@@ -30,6 +33,10 @@ module ApplicationImport
       end
 
       private
+
+      def dropped?(row)
+        row.errors.any? { |error| definition.on_error.action_for(error.code) != :allow }
+      end
 
       def check_keys(row)
         missing = keys.reject { |key| row.attributes.key?(key) }

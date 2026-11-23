@@ -99,7 +99,6 @@ module ApplicationImport
       # an abort halts once the writer returned.
       def write_rows
         kept = rows
-        result.increment(:valid, kept.size)
         written = handler.write(kept, writer)
         result.increment(:written, written)
         halt! if writer.aborted?

@@ -33,6 +33,14 @@ module ApplicationImport
           @file.flush
         end
 
+        # Line of the first character after `prefix` (decoded text not written yet, e.g.
+        # before a decode error), counting newlines the way they are normalized.
+        def line_after(prefix)
+          return lines + prefix.count("\n") + 1 unless @normalize
+
+          lines + (@pending_cr + prefix).scan(/\r\n?|\n/).size + 1
+        end
+
         def content?
           @content
         end

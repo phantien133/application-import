@@ -81,7 +81,7 @@ module ApplicationImport
       end
 
       def temporal(value, type, path)
-        (type == :date) ? Date.iso8601(value.to_s) : Time.iso8601(value.to_s)
+        (type == :date) ? Date.iso8601(value.to_s) : Time.zone.iso8601(value.to_s)
       rescue ArgumentError
         add_error(path, "must be an ISO 8601 #{type}")
       end

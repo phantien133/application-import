@@ -162,6 +162,11 @@ RSpec.describe ApplicationImport::Readers::EncodingGate do
       expect(log.string).to include("WARN", "file has a UTF-16LE BOM, ignoring the configured encoding UTF-8")
     end
 
+    it "reads UTF-32LE and UTF-32BE (checked before UTF-16)" do
+      expect([ read("\xFF\xFE\x00\x00".b + "email\n".encode("UTF-32LE").b).first(2), read("\x00\x00\xFE\xFF".b + "email\n".encode("UTF-32BE").b).first(2) ])
+        .to eq([ [ "email\n", Encoding::UTF_32LE ], [ "email\n", Encoding::UTF_32BE ] ])
+    end
+
     it "reads UTF-16BE" do
       expect(read("\xFE\xFF".b + "email\n".encode("UTF-16BE").b).first).to eq("email\n")
     end
@@ -242,6 +247,15 @@ RSpec.describe ApplicationImport::Readers::EncodingGate do
 
     it "keeps a CRLF split across chunks as one newline" do
       expect(read("ab\r\ncd\r\n", normalize_newlines: true, chunk_size: 3).first).to eq("ab\ncd\n")
+    end
+
+    it "counts lone CR as line breaks in error hints, across chunks too" do
+      expect([ rejection("a\rb\rc\xFF\r", normalize_newlines: true).last, rejection("a\rb\r\xFF", normalize_newlines: true, chunk_size: 4).last ])
+        .to all(include("first invalid byte on line 3"))
+    end
+
+    it "counts a CRLF split across chunks once in error hints" do
+      expect(rejection("ab\r\nc\xFF", normalize_newlines: true, chunk_size: 3).last).to include("first invalid byte on line 2")
     end
 
     it "counts lines after normalization for error hints" do

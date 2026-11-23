@@ -211,7 +211,13 @@ RSpec.describe ApplicationImport::HeaderMapper do
           expect(log.string).to include("WARN", "ignoring 2 blank headers")
         end
 
-        it "reports repeated unknown headers" do
+        it "reports repeated unknown headers, ignoring case and spaces" do
+          map([ "Email", "Phone", "phone " ], file)
+
+          expect(errors).to eq([ [ :duplicate_headers, 'header "phone" duplicates "Phone"', { header: "phone", column: "Phone" } ] ])
+        end
+
+        it "reports exactly repeated unknown headers" do
           map([ "Email", "Note", "Note" ], file)
 
           expect(errors).to eq([ [ :duplicate_headers, 'header "Note" duplicates "Note"', { header: "Note", column: "Note" } ] ])

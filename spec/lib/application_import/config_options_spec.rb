@@ -859,27 +859,27 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
 
     it "imports with activerecord-import by default when a model is set" do
       expect(summary(write({ "model" => "OutputSpecUser" }))).to eq([
-        :completed_with_errors, [ [ 3, :not_saved ] ], [ 3, 3, 1, 2 ], %w[ a@x.io c@x.io ]
+        :completed_with_errors, [ [ 3, :not_saved ] ], [ 3, 2, 1, 2 ], %w[ a@x.io c@x.io ]
       ])
     end
 
     it "saves record by record with mode save" do
       expect(summary(write({ "model" => "OutputSpecUser", "mode" => "save" }))).to eq([
-        :completed_with_errors, [ [ 3, :not_saved ] ], [ 3, 3, 1, 2 ], %w[ a@x.io c@x.io ]
+        :completed_with_errors, [ [ 3, :not_saved ] ], [ 3, 2, 1, 2 ], %w[ a@x.io c@x.io ]
       ])
     end
 
     it "rolls the whole write back and fails on abort (transaction by default)" do
       %w[ bulk save ].each do |mode|
         expect(summary(write({ "model" => "OutputSpecUser", "mode" => mode }, on_error: "abort")))
-          .to eq([ :failed, [ [ 3, :not_saved ] ], [ 3, 3, 1, 0 ], [] ])
+          .to eq([ :failed, [ [ 3, :not_saved ] ], [ 3, 2, 1, 0 ], [] ])
       end
     end
 
     it "keeps what was written before the abort without transaction" do
       result = write({ "model" => "OutputSpecUser", "mode" => "save", "transaction" => false }, on_error: "abort")
 
-      expect(summary(result)).to eq([ :failed, [ [ 3, :not_saved ] ], [ 3, 3, 1, 1 ], %w[ a@x.io ] ])
+      expect(summary(result)).to eq([ :failed, [ [ 3, :not_saved ] ], [ 3, 2, 1, 1 ], %w[ a@x.io ] ])
     end
 
     it "does not write rows skipped before the write" do
@@ -905,10 +905,18 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
       expect(OutputSpecUser.count).to eq(3)
     end
 
+    it "keeps total = valid + invalid, rows with allowed errors counted invalid" do
+      columns = { "email" => { "header" => "Email" }, "name" => { "header" => "Name", "max_length" => 2 } }
+      result = ApplicationImport.run(definition(columns:, on_error: { "allow" => [ "too_long" ] }),
+        StringIO.new("Email,Name\na@x.io,Ann\nb@x.io,Bo\n"), filename: "users.csv", logger:)
+
+      expect([ result.status, result.stats.values_at(:total, :valid, :invalid, :written) ]).to eq([ :completed_with_errors, [ 2, 1, 1, 2 ] ])
+    end
+
     it "logs a summary at the end" do
       write({ "model" => "OutputSpecUser" })
 
-      expect(log.string).to include("finished users.csv: completed_with_errors, total 3, valid 3, invalid 1, written 2")
+      expect(log.string).to include("finished users.csv: completed_with_errors, total 3, valid 2, invalid 1, written 2")
     end
 
     it "rejects invalid output settings" do

@@ -13,7 +13,10 @@ module ApplicationImport
       include Logging
 
       CHUNK_SIZE = 64 * 1024
+      # UTF-32 first: the UTF-32LE BOM starts with the UTF-16LE one.
       BOMS = {
+        "\xFF\xFE\x00\x00".b => Encoding::UTF_32LE,
+        "\x00\x00\xFE\xFF".b => Encoding::UTF_32BE,
         "\xEF\xBB\xBF".b => Encoding::UTF_8,
         "\xFF\xFE".b => Encoding::UTF_16LE,
         "\xFE\xFF".b => Encoding::UTF_16BE
@@ -107,7 +110,7 @@ module ApplicationImport
       end
 
       def decode_error(error, output, encoding)
-        line = output.lines + error.prefix.count("\n") + 1
+        line = output.line_after(error.prefix)
         reason = error.undefined? ? "cannot be converted from #{encoding} to UTF-8" : "is not valid #{encoding}"
         invalid("file #{reason} (first invalid byte on line #{line})", encoding)
       end

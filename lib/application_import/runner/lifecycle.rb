@@ -33,9 +33,16 @@ module ApplicationImport
       # after_import is logged and reported, never raised: rows may already be committed,
       # and raising would hide the result (or the original exception).
       def finish
+        count_valid
         close_reader
         info("finished #{source.filename}: #{result.status}, #{result.stats.map { |key, value| "#{key} #{value}" }.join(", ")}")
         run_after_import
+      end
+
+      # valid: rows read without any error (total = valid + invalid).
+      def count_valid
+        stats = result.stats
+        stats[:valid] = stats[:total] - stats[:invalid]
       end
 
       def run_after_import

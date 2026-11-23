@@ -31,7 +31,7 @@ RSpec.describe ApplicationImport::Configs::CsvOptionsParser do
 
     expect(errors).to contain_exactly(
       "file.csv.col_sep must be a non-empty string",
-      "file.csv.quote_char must be a non-empty string",
+      "file.csv.quote_char must be one character",
       "file.csv.liberal_parsing must be true or false",
       "file.csv.strip must be true, false or a single character",
       a_string_starting_with("file.csv.skip_lines is not a valid regexp"),
@@ -42,6 +42,17 @@ RSpec.describe ApplicationImport::Configs::CsvOptionsParser do
 
   it "rejects strip strings of several characters (unsupported by the csv gem)" do
     expect(parse("strip" => " *").last).to eq([ "file.csv.strip must be true, false or a single character" ])
+  end
+
+  it "requires a one-character quote_char" do
+    expect([ parse("quote_char" => "''").last, parse("quote_char" => "'").last ]).to eq([ [ "file.csv.quote_char must be one character" ], [] ])
+  end
+
+  it "requires col_sep, quote_char and row_sep to differ, defaults included" do
+    expect([ parse("col_sep" => '"').last, parse("quote_char" => ",").last, parse("col_sep" => ";", "row_sep" => ";").last,
+      parse("col_sep" => ";", "quote_char" => "'", "row_sep" => "|").last ])
+      .to eq([ [ "file.csv col_sep and quote_char must differ (#{'"'.inspect})" ], [ 'file.csv col_sep and quote_char must differ (",")' ],
+        [ 'file.csv col_sep and row_sep must differ (";")' ], [] ])
   end
 
   it "rejects a non-string skip_lines" do

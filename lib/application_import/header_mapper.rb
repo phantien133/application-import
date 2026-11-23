@@ -194,10 +194,14 @@ module ApplicationImport
         end
       end
 
+      # Repeated unknown headers are compared like column headers (case, spaces).
       def keep_unknown(named)
+        kept = {}
         named.each do |header, index|
-          next duplicate(header, header) if @indexes.value?(header)
+          first = kept[HeaderMapper.normalize(header)]
+          next duplicate(header, first) if first
 
+          kept[HeaderMapper.normalize(header)] = header
           @indexes[index] = header
         end
       end

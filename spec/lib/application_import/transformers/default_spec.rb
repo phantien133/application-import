@@ -9,8 +9,9 @@ RSpec.describe ApplicationImport::Transformers::Default do
       transform({ count: 0 }, attribute: :count, value: 1).first ]).to eq([ nil, nil ])
   end
 
-  it "replaces false, which Rails treats as blank" do
-    expect(transform({ active: false }, attribute: :active, value: true).first).to eq(active: true)
+  it "keeps false and 0 (values, not missing)" do
+    expect([ transform({ active: false }, attribute: :active, value: true).first, transform({ n: 0 }, attribute: :n, value: 1).first ])
+      .to eq([ nil, nil ])
   end
 
   it "can set nil or false as the default" do

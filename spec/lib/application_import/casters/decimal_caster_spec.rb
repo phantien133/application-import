@@ -21,4 +21,10 @@ RSpec.describe ApplicationImport::Casters::DecimalCaster do
   it "names the type" do
     expect(caster.type_name).to eq("a number")
   end
+
+  it "reports NaN and Infinity as invalid (they pass every min / max)" do
+    [ "NaN", "Infinity", "-Infinity", BigDecimal("NaN"), Float::INFINITY ].each do |value|
+      expect { caster.call(value) }.to raise_error(ApplicationImport::Caster::Invalid, "Value must be a number")
+    end
+  end
 end

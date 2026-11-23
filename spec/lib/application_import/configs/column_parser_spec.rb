@@ -53,6 +53,12 @@ RSpec.describe ApplicationImport::Configs::ColumnParser do
     end
   end
 
+  it "parses datetime bounds in Time.zone" do
+    Time.use_zone("Asia/Tokyo") do
+      expect(column({ "type" => "datetime", "min" => "2026-01-01T00:00:00" }).options[:min]).to eq(Time.zone.local(2026))
+    end
+  end
+
   it "requires at least one column" do
     expect([ parse(nil), parse({}) ]).to eq([ [], [] ])
     expect(errors).to eq([ "columns must define at least one column" ] * 2)

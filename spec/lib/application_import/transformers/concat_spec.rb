@@ -29,4 +29,8 @@ RSpec.describe ApplicationImport::Transformers::Concat do
 
     expect(row.errors).to eq([])
   end
+
+  it "keeps false and 0" do
+    expect(transform({ a: false, b: 0 }, from: %i[ a b ], to: :c).first).to eq(c: "false 0")
+  end
 end

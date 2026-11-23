@@ -6,6 +6,8 @@ module ApplicationImport
   #   format               -> invalid_format  (regexp, or email)
   #   inclusion            -> not_included    (compared as strings)
   # Only required applies to nil.
+  # Rules check the value as read from the file (after cast, before transformers and the
+  # mapper): they describe the file. Checks on transformed values belong in validators.
   module ColumnRules
     module_function
 

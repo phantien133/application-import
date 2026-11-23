@@ -32,13 +32,17 @@ module ApplicationImport
       @casters = {}
     end
 
+    # Only errors of the cast itself become invalid values; a caster that cannot be
+    # built (a bug) raises as is.
     def call(column, value)
       return if blank?(value)
 
       caster = caster_for(column)
-      caster.call(value)
-    rescue ArgumentError, TypeError, RangeError
-      raise Invalid, "#{column.header} must be #{caster.type_name}"
+      begin
+        caster.call(value)
+      rescue ArgumentError, TypeError, RangeError
+        raise Invalid, "#{column.header} must be #{caster.type_name}"
+      end
     end
 
     def caster_for(column)

@@ -235,4 +235,14 @@ RSpec.describe ApplicationImport::Caster do
   it "names the column header in messages" do
     expect(invalid(:integer, "x", header: "Age")).to eq("Age must be an integer")
   end
+
+  it "lets a caster that cannot be built raise as is (a bug, not an invalid value)" do
+    stub_const("BrokenCaster", Class.new(ApplicationImport::Casters::Base) do
+      def initialize(*)
+        raise ArgumentError, "bad constructor"
+      end
+    end)
+
+    expect { cast(:string, "x", caster: BrokenCaster) }.to raise_error(ArgumentError, "bad constructor")
+  end
 end

@@ -7,7 +7,9 @@ module ApplicationImport
     # returns its on_error action: abort stops the writer. Writing never halts from
     # inside a transaction: the Runner halts once the writer returned (#aborted?).
     #
-    # With output.transaction (default true) the whole write runs in one transaction
+    # After a rollback, records written by Model.import (bulk) still look persisted (ids
+    # set by activerecord-import); the rows' not_saved errors and the result are the
+    # truth. With output.transaction (default true) the whole write runs in one transaction
     # (requires_new, so it nests as a savepoint): an abort rolls it back
     # (ActiveRecord::Rollback) and nothing counts as written. Each record / batch also
     # runs in its own savepoint, so a database error on one does not break the others.
