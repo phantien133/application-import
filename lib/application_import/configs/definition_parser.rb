@@ -135,7 +135,17 @@ module ApplicationImport
 
       def resolve_references(parsed)
         parsed[:output][:model] = ClassResolver.resolve!(parsed[:output][:model], base: "ActiveRecord::Base")
+        resolve_casters(parsed[:columns])
         ValidatorParser.resolve!(parsed[:validators], output_model: parsed[:output][:model], name: @name)
+      end
+
+      def resolve_casters(columns)
+        columns.each do |column|
+          next unless column.options[:caster]
+
+          column.options[:caster] = ClassResolver.resolve!(column.options[:caster], base: "ApplicationImport::Casters::Base",
+            error: Errors::InvalidCasterError)
+        end
       end
 
       def resolve(name, base, error)

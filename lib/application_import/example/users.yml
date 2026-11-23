@@ -58,6 +58,9 @@ columns:
     header: "Active"
     type: boolean
 
+  phone:
+    header: "Phone"
+    caster: Imports::PhoneCaster   # custom caster (< ApplicationImport::Casters::Base) instead of the type's
   role:
     header: "Role"
     inclusion: [ admin, member, guest ]
@@ -65,12 +68,14 @@ columns:
   joined_on:
     header: "Joined"
     type: date
-    date_format: "%d/%m/%Y"
+    date_format: "%d/%m/%Y"   # strict: the whole value must match
     min: "2000-01-01"
 
   last_login_at:
     header: "Last login"
     type: datetime
+    # no date_format: ISO 8601, else lenient Time.zone.parse (needs year, month, day)
+    # with a warning once per run — set date_format to parse exactly
 
 # --- Validators ----------------------------------------------------------------
 # Run after the per-column checks. Either `type` (registered validator) or

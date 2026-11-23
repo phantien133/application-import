@@ -4,7 +4,7 @@ module ApplicationImport
       include Checks
       include Constants
 
-      KEYS = %w[ header aliases header_pattern type required max_length min_length min max format inclusion date_format ].freeze
+      KEYS = %w[ header aliases header_pattern type caster required max_length min_length min max format inclusion date_format ].freeze
       KEY_FORMAT = /\A[a-z_][a-z0-9_]*\z/
 
       def initialize(config, errors)
@@ -42,6 +42,7 @@ module ApplicationImport
       def column_options(options, type, path)
         parsed = {
           required: boolean(options.fetch("required", false), "#{path}.required"),
+          caster: class_name(options["caster"], "#{path}.caster"),
           header_patterns: header_patterns(options["header_pattern"], "#{path}.header_pattern"),
           format: format(options["format"], "#{path}.format"),
           inclusion: inclusion(options["inclusion"], "#{path}.inclusion"),

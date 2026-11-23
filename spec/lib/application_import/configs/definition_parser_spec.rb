@@ -159,6 +159,18 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
       ])
     end
 
+    it "resolves column casters" do
+      caster = stub_const("PhoneCaster", Class.new(ApplicationImport::Casters::Base))
+      columns = described_class.new(:users, { "columns" => { "phone" => { "caster" => "PhoneCaster" }, "name" => nil } }).parse[:columns]
+
+      expect(columns.map { |column| column.options[:caster] }).to eq([ caster, nil ])
+    end
+
+    it "raises InvalidCasterError for a caster not inheriting Casters::Base" do
+      expect { described_class.new(:users, { "columns" => { "phone" => { "caster" => "String" } } }).parse }
+        .to raise_error(ApplicationImport::Errors::InvalidCasterError, "String must inherit from ApplicationImport::Casters::Base")
+    end
+
     it "resolves the model of a model validator, falling back to output.model" do
       model = stub_const("ImportSpecUser", Class.new(ApplicationRecord))
       own = parse({ "validators" => { "row" => [ { "type" => "model", "model" => "ImportSpecUser" } ] } })[:validators][:row].first
@@ -191,10 +203,12 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     stub_const("Imports::Users::DomainValidator", Class.new(ApplicationImport::Validators::RowValidator))
     stub_const("Imports::Users::FileDateValidator", Class.new(ApplicationImport::Validators::FileValidator))
     stub_const("Imports::Users::ManagersExistValidator", Class.new(ApplicationImport::Validators::VerifyValidator))
+    phone = stub_const("Imports::PhoneCaster", Class.new(ApplicationImport::Casters::Base))
     config = YAML.safe_load_file(Rails.root.join("lib/application_import/example/users.yml"))
 
     result = described_class.new(:example, config).parse
 
-    expect(result[:columns].map(&:type)).to eq(%i[ string string integer decimal boolean string date datetime ])
+    expect(result[:columns].map(&:type)).to eq(%i[ string string integer decimal boolean string string date datetime ])
+    expect(result[:columns].find { |column| column.key == :phone }.options[:caster]).to eq(phone)
   end
 end

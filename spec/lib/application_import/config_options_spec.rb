@@ -382,6 +382,100 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
     end
   end
 
+  describe "column types" do
+    def cast(type, value, **options)
+      column = { "header" => "Value", **(type ? { "type" => type } : {}), **options }
+      result = run("Value\n#{value}\n", columns: { "value" => column }, on_error: "skip")
+      result.errors.any? ? result.errors.map { |e| [ e.code, e.message ] } : result.records.first[:value]
+    end
+
+    it "keeps strings by default (type absent or string)" do
+      expect([ cast(nil, "abc"), cast("string", "abc") ]).to eq(%w[ abc abc ])
+    end
+
+    it "casts integer, decimal and boolean" do
+      expect([ cast("integer", "42"), cast("decimal", "1.5"), cast("boolean", "yes"), cast("boolean", "0") ])
+        .to eq([ 42, BigDecimal("1.5"), true, false ])
+    end
+
+    it "reports values that cannot be cast" do
+      expect([ cast("integer", "1.5"), cast("decimal", "x"), cast("boolean", "maybe") ]).to eq([
+        [ [ :invalid_type, "Value must be an integer" ] ], [ [ :invalid_type, "Value must be a number" ] ],
+        [ [ :invalid_type, "Value must be true or false" ] ]
+      ])
+    end
+
+    it "parses dates and times strictly with date_format" do
+      expect([ cast("date", "01/02/2026", "date_format" => "%d/%m/%Y"),
+        cast("datetime", "01/02/2026 10:30", "date_format" => "%d/%m/%Y %H:%M"),
+        cast("date", "2026-02-01", "date_format" => "%d/%m/%Y") ])
+        .to eq([ Date.new(2026, 2, 1), Time.zone.local(2026, 2, 1, 10, 30), [ [ :invalid_type, "Value must be a date" ] ] ])
+      expect(log.string).not_to include("date_format")
+    end
+
+    it "parses ISO 8601 without date_format, else leniently with a warning" do
+      expect([ cast("date", "2026-02-01"), cast("date", "1 Feb 2026"), cast("datetime", "Feb 1 2026 10:30") ])
+        .to eq([ Date.new(2026, 2, 1), Date.new(2026, 2, 1), Time.zone.local(2026, 2, 1, 10, 30) ])
+      expect(log.string.scan("has no date_format").size).to eq(2)
+    end
+
+    it "uses a custom caster from the column caster option, type describing the result" do
+      stub_const("CentsCaster", Class.new(ApplicationImport::Casters::Base) do
+        define_method(:call) { |value| (BigDecimal(value.to_s.delete("$")) * 100).to_i }
+      end)
+
+      expect([ cast("integer", "$1.50", "caster" => "CentsCaster"), cast("integer", "$1.50", "caster" => "CentsCaster", "max" => 100) ])
+        .to eq([ 150, [ [ :too_big, "Value must be less than or equal to 100" ] ] ])
+    end
+
+    it "rejects a caster that is not a Casters::Base" do
+      expect { definition(columns: { "value" => { "caster" => "String" } }) }
+        .to raise_error(ApplicationImport::Errors::InvalidCasterError)
+    end
+
+    it "turns blank cells into nil" do
+      expect(run("Email,Name\na@x.io,\n").records).to eq([ { email: "a@x.io", name: nil } ])
+    end
+  end
+
+  describe "column rules" do
+    # A second column keeps the row from being blank when value is empty.
+    def check(value, type: "string", **options)
+      columns = { "value" => { "header" => "Value", "type" => type, **options }, "other" => { "header" => "Other" } }
+      run("Value,Other\n#{value},x\n", columns:, on_error: "skip").errors.map(&:code)
+    end
+
+    it "requires a value with required: true only" do
+      expect([ check("", "required" => true), check(""), check("", "required" => false), check("x", "required" => true) ])
+        .to eq([ %i[ required ], [], [], [] ])
+    end
+
+    it "checks min_length / max_length" do
+      expect([ check("a", "min_length" => 2), check("abcd", "max_length" => 3), check("ab", "min_length" => 2, "max_length" => 3) ])
+        .to eq([ %i[ too_short ], %i[ too_long ], [] ])
+    end
+
+    it "checks min / max on numbers and dates" do
+      expect([ check("17", :type => "integer", "min" => 18), check("151", :type => "integer", "max" => 150),
+        check("1999-12-31", :type => "date", "min" => "2000-01-01"), check("20", :type => "integer", "min" => 18, "max" => 150) ])
+        .to eq([ %i[ too_small ], %i[ too_big ], %i[ too_small ], [] ])
+    end
+
+    it "checks format (regexp or email)" do
+      expect([ check("1a", "format" => '\A\d+\z'), check("nope", "format" => "email"), check("a@x.io", "format" => "email") ])
+        .to eq([ %i[ invalid_format ], %i[ invalid_format ], [] ])
+    end
+
+    it "checks inclusion" do
+      expect([ check("guest", "inclusion" => %w[ admin member ]), check("admin", "inclusion" => %w[ admin member ]) ])
+        .to eq([ %i[ not_included ], [] ])
+    end
+
+    it "skips rules for a value that could not be cast" do
+      expect(check("x", :type => "integer", "min" => 1)).to eq(%i[ invalid_type ])
+    end
+  end
+
   describe "validators" do
     it "runs with no validators section, an empty one, or a null one" do
       expect([ outcome, outcome(validators: {}), outcome(validators: nil) ]).to all(eq(ok(ann)))

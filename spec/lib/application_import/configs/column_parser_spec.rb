@@ -40,6 +40,19 @@ RSpec.describe ApplicationImport::Configs::ColumnParser do
     end
   end
 
+  describe "caster" do
+    it "keeps the class name, absent by default" do
+      expect([ column({ "caster" => "Imports::PhoneCaster" }).options[:caster], column(nil).options.key?(:caster) ])
+        .to eq([ "Imports::PhoneCaster", false ])
+    end
+
+    it "rejects non class names" do
+      column({ "caster" => 1 })
+
+      expect(errors).to eq([ "columns.email.caster must be a class name" ])
+    end
+  end
+
   it "requires at least one column" do
     expect([ parse(nil), parse({}) ]).to eq([ [], [] ])
     expect(errors).to eq([ "columns must define at least one column" ] * 2)

@@ -155,6 +155,48 @@ RSpec.describe ApplicationImport::Runner::Rows do
     end
   end
 
+  describe "casting" do
+    def content
+      "email,age,note\na@x.io, 30 ,hi\nb@x.io,old,hi\n"
+    end
+
+    def config
+      { "file" => { "unknown_headers" => "keep" }, "columns" => { "email" => nil, "age" => { "type" => "integer", "min" => 18 } },
+        "on_error" => on_error }
+    end
+
+    def on_error
+      "skip"
+    end
+
+    it "casts declared columns before map_row, leaving kept unknown headers as read" do
+      runner = RowsSpecRunner.new(definition, ApplicationImport::Source.new(filename: "u.csv", io: StringIO.new(content)), logger: nil)
+      runner.call
+
+      expect(runner.rows.map(&:attributes)).to eq([ { :email => "a@x.io", :age => 30, "note" => "hi", :mapped => true } ])
+    end
+
+    it "stops a row with a cast error before map_row (row_errors: first)" do
+      result = run
+
+      expect(result.errors.map { |e| [ e.line, e.code, e.column, e.message, e.details ] })
+        .to eq([ [ 3, :invalid_type, "age", "age must be an integer", { value: "old" } ] ])
+      expect(events).not_to include([ :map_row, 3 ])
+    end
+
+    context "with row_errors: all" do
+      def on_error
+        { "default" => "skip", "row_errors" => "all" }
+      end
+
+      it "still runs the next checks after cast errors" do
+        run
+
+        expect(events).to include([ :map_row, 3 ], [ :validate_row, 3 ])
+      end
+    end
+  end
+
   describe "on_error.row_errors" do
     before do
       stub_const("FirstCheck", validator(:row) { |row, _result| row.add_error(code: :one, message: "1").add_error(code: :two, message: "2") })

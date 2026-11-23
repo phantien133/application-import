@@ -3,7 +3,8 @@ module ApplicationImport
     # The row pipeline of the Runner.
     #
     # process streams the reader; for each data row:
-    #   build (header map) -> map (handler.map_row, handler.build_record)
+    #   build (header map) -> cast (types + column rules, one check for all columns)
+    #   -> map (handler.map_row, handler.build_record)
     #   -> row checks (row validators, handler.validate_row; each row on its own)
     #   -> rows checks (rows validators, handler.validate_rows; across rows, called per
     #      row in file order with the run's cache: a Hash, empty at start, shared by every
@@ -44,7 +45,30 @@ module ApplicationImport
 
       # The steps of one row, in order; each may report errors on the row.
       def row_checks(row)
-        [ -> { map_row(row) }, *row_stage(row), *rows_stage(row) ]
+        [ -> { cast_row(row) }, -> { map_row(row) }, *row_stage(row), *rows_stage(row) ]
+      end
+
+      # One check for the whole row: every declared column is cast and checked against
+      # its rules (errors of all columns are collected); kept unknown headers are left as is.
+      def cast_row(row)
+        definition.columns.each do |column|
+          next unless row.attributes.key?(column.key)
+
+          cast_column(row, column)
+        end
+      end
+
+      def cast_column(row, column)
+        key = column.key
+        raw = row.attributes[key]
+        value = row.attributes[key] = caster.call(column, raw)
+        ColumnRules.errors(column, value).each { |code, message| row.add_error(code:, message:, column: key) }
+      rescue Caster::Invalid => e
+        row.add_error(code: :invalid_type, message: e.message, column: key, details: { value: raw })
+      end
+
+      def caster
+        @caster ||= Caster.new(definition, logger:)
       end
 
       def row_stage(row)
