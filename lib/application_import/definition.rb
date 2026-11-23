@@ -63,9 +63,5 @@ module ApplicationImport
     def reader_class
       file[:reader] || Readers.reader_class(file[:format])
     end
-
-    def max_rows
-      file[:max_rows]
-    end
   end
 end

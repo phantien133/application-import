@@ -10,7 +10,8 @@ module ApplicationImport
     # #on_headers registers a callback called with #headers once known: right after the
     # header row, or before the first record without one (even for an empty file).
     # Blank records (no cell with content) are skipped.
-    # Raises FileError: empty_file (no header / no data rows), too_many_rows (file.max_rows).
+    # Raises FileError empty_file (no header / no data rows). File size is bounded by
+    # file.max_size (FileChecker), not by a row count.
     class Base
       include Enumerable
       include Logging
@@ -59,7 +60,7 @@ module ApplicationImport
         each_record do |line, values|
           next if blank?(values) || read_header(values)
 
-          check_max_rows(count += 1)
+          count += 1
           yield RawRow.new(line:, values:)
         end
         count
@@ -75,13 +76,6 @@ module ApplicationImport
 
       def blank?(values)
         values.all? { |value| value.nil? || value.to_s.strip.empty? }
-      end
-
-      def check_max_rows(count)
-        max_rows = definition.max_rows
-        return if max_rows.nil? || count <= max_rows
-
-        raise Errors::FileError.new("file has more than #{max_rows} data rows", code: :too_many_rows)
       end
 
       def check_not_empty(count)

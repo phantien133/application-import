@@ -59,6 +59,29 @@ RSpec.describe ApplicationImport::HeaderMapper do
       expect(log.string).to include("INFO [ApplicationImport::HeaderMapper:users] optional headers not found: Full Name, Age")
     end
 
+    context "with require_all_headers" do
+      let(:file) { { "require_all_headers" => true } }
+
+      it "reports every column without header, optional ones included" do
+        map(%w[ Age ], file)
+
+        expect(errors).to eq([ [ :missing_headers, "missing required headers: Email, Full Name", { headers: [ "Email", "Full Name" ] } ] ])
+        expect(log.string).not_to include("optional headers not found")
+      end
+
+      it "passes when every column has a header, in any order" do
+        map([ "Age", "Full Name", "e-mail" ], file)
+
+        expect(errors).to eq([])
+      end
+
+      it "is ignored without a header row" do
+        map([], file.merge("headers" => false))
+
+        expect(errors).to eq([])
+      end
+    end
+
     it "does not log when every header is present" do
       map([ "Email", "Full Name", "Age" ])
 
@@ -87,6 +110,45 @@ RSpec.describe ApplicationImport::HeaderMapper do
 
         expect(header_map.attributes(%w[ a 123 hi ])).to eq(email: "a", name: nil, age: nil)
         expect(log.string).to include("ignoring unknown headers: Phone, Note")
+      end
+
+      context "with unknown_headers: reject" do
+        let(:file) { { "unknown_headers" => "reject" } }
+
+        it "reports them all in one error" do
+          map([ "Email", "Phone", "Note" ], file)
+
+          expect(errors).to eq([ [ :unknown_headers, "unknown headers: Phone, Note", { headers: %w[ Phone Note ] } ] ])
+        end
+
+        it "ignores blank headers with a warning" do
+          map([ "Email", "", nil ], file)
+
+          expect(errors).to eq([])
+          expect(log.string).to include("ignoring 2 blank headers")
+        end
+
+        it "has nothing to reject without a header row" do
+          header_map = map([], file.merge("headers" => false))
+
+          expect([ errors, header_map.attributes(%w[ a b c extra ]) ]).to eq([ [], { email: "a", name: "b", age: "c" } ])
+        end
+      end
+
+      context "with exact headers (require_all_headers + reject)" do
+        let(:file) { { "require_all_headers" => true, "unknown_headers" => "reject" } }
+
+        it "passes with every column and nothing else, in any order" do
+          map([ "Age", "e-mail", "Full Name" ], file)
+
+          expect(errors).to eq([])
+        end
+
+        it "reports both missing and extra headers" do
+          map([ "Email", "Phone" ], file)
+
+          expect(errors.map(&:first)).to eq(%i[ missing_headers unknown_headers ])
+        end
       end
 
       context "with unknown_headers: keep" do

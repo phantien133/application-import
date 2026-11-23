@@ -5,7 +5,7 @@ module ApplicationImport
     # Validated options:
     #   col_sep, quote_char, row_sep -> non-empty strings
     #   liberal_parsing              -> true / false
-    #   strip                        -> true / false, or the characters to strip
+    #   strip                        -> true / false, or one character to strip (csv gem limit)
     #   skip_lines                   -> regexp (source string)
     #   max_field_size               -> integer >= 1
     # passthrough: a mapping handed to CSV.new as-is (keys symbolized, values NOT
@@ -53,9 +53,9 @@ module ApplicationImport
       end
 
       def strip(value, path)
-        return value if [ true, false ].include?(value) || (value.is_a?(String) && !value.empty?)
+        return value if [ true, false ].include?(value) || (value.is_a?(String) && value.length == 1)
 
-        add_error(path, "must be true, false or a non-empty string")
+        add_error(path, "must be true, false or a single character")
       end
 
       def pattern(value, path)

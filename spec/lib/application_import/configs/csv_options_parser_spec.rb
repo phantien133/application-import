@@ -11,11 +11,11 @@ RSpec.describe ApplicationImport::Configs::CsvOptionsParser do
   it "parses every validated option" do
     options, errors = parse(
       "col_sep" => ";", "quote_char" => "'", "row_sep" => "\r\n",
-      "liberal_parsing" => true, "strip" => " \t", "skip_lines" => '\A#', "max_field_size" => 100
+      "liberal_parsing" => true, "strip" => "\t", "skip_lines" => '\A#', "max_field_size" => 100
     )
 
     expect(errors).to eq([])
-    expect(options).to eq(col_sep: ";", quote_char: "'", row_sep: "\r\n", liberal_parsing: true, strip: " \t",
+    expect(options).to eq(col_sep: ";", quote_char: "'", row_sep: "\r\n", liberal_parsing: true, strip: "\t",
       skip_lines: /\A#/, max_field_size: 100)
   end
 
@@ -33,11 +33,15 @@ RSpec.describe ApplicationImport::Configs::CsvOptionsParser do
       "file.csv.col_sep must be a non-empty string",
       "file.csv.quote_char must be a non-empty string",
       "file.csv.liberal_parsing must be true or false",
-      "file.csv.strip must be true, false or a non-empty string",
+      "file.csv.strip must be true, false or a single character",
       a_string_starting_with("file.csv.skip_lines is not a valid regexp"),
       "file.csv.max_field_size must be an integer >= 1",
       "file.csv.passthrough must be a mapping"
     )
+  end
+
+  it "rejects strip strings of several characters (unsupported by the csv gem)" do
+    expect(parse("strip" => " *").last).to eq([ "file.csv.strip must be true, false or a single character" ])
   end
 
   it "rejects a non-string skip_lines" do

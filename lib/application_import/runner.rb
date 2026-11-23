@@ -65,7 +65,7 @@ module ApplicationImport
       definition.file_checker_class.new(definition, logger:)
     end
 
-    # Streams the data rows through the reader (encoding gate, headers, max_rows) and
+    # Streams the data rows through the reader (encoding gate, headers) and
     # maps them to attributes once the headers are checked (HeaderMapper); a file error
     # while reading or in the headers halts the import.
     def read_file
@@ -78,12 +78,14 @@ module ApplicationImport
       halt! if result.file_errors?
     end
 
+    # A custom reader that never calls on_headers gets its headers mapped at the first row.
     def read_row(raw)
+      map_headers(Array(reader.headers)) unless @header_map
       result.increment(:total)
       rows << Row.new(line: raw.line, attributes: @header_map.attributes(raw.values), raw: raw.values)
     end
 
-    # Next stages (header mapping, casting, validators, write) work on #rows.
+    # Next stages (casting, validators, write) work on #rows.
     def process
       raise NotImplementedError, "#{self.class.name}#process"
     end

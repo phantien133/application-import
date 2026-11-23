@@ -7,14 +7,18 @@ module ApplicationImport
   # against the stripped header); names win over patterns:
   #   - a header matching the patterns of several
   #     columns                                   -> file error ambiguous_headers
-  #   - a required column without header          -> file error missing_headers
+  #   - a required column without header (every
+  #     column with file.require_all_headers)     -> file error missing_headers
   #   - an optional column without header         -> its attribute is nil (logged)
   #   - two headers for one column, or repeated
   #     kept unknown headers                      -> file error duplicate_headers
   #   - unknown headers, per file.unknown_headers:
   #       skip (default) -> ignored (logged)
   #       keep           -> passed through as attributes keyed by the header String
-  #                         (blank ones are ignored)
+  #       reject         -> file error unknown_headers
+  #     blank headers are ignored (warned) by keep and reject
+  # Exact headers (every column, nothing else): require_all_headers: true +
+  # unknown_headers: reject.
   # Without a header row (file.headers: false), cells map to columns by position; with
   # keep, the extra cells are kept as "column_<n>".
   # Errors are added to the result (all of them); the caller halts on file errors.
@@ -40,8 +44,16 @@ module ApplicationImport
       Matcher.new(self, headers, result).map
     end
 
+    def require_all_headers?
+      definition.file[:require_all_headers] == true
+    end
+
     def keep_unknown?
       definition.file[:unknown_headers] == :keep
+    end
+
+    def unknown_headers
+      definition.file[:unknown_headers] || :skip
     end
 
     def column_keys
@@ -111,25 +123,47 @@ module ApplicationImport
       end
 
       def check_missing
-        missing = @mapper.definition.columns.reject { |column| @matched.key?(column.key) }
-        required, optional = missing.partition(&:required?)
+        required, optional = missing_columns.partition { |column| must_have_header?(column) }
         @mapper.log(:info, "optional headers not found: #{optional.map(&:header).join(", ")}") if optional.any?
-        return if required.empty?
+        report_missing(required.map(&:header)) if required.any?
+      end
 
-        names = required.map(&:header)
+      def missing_columns
+        @mapper.definition.columns.reject { |column| @matched.key?(column.key) }
+      end
+
+      def must_have_header?(column)
+        @mapper.require_all_headers? || column.required?
+      end
+
+      def report_missing(names)
         @result.add_file_error(:missing_headers, "missing required headers: #{names.join(", ")}", details: { headers: names })
       end
 
       def handle_unknown
         return if @unknown.empty?
-        return keep_unknown if @mapper.keep_unknown?
 
-        @mapper.log(:info, "ignoring unknown headers: #{@unknown.map(&:first).join(", ")}")
+        case @mapper.unknown_headers
+        when :keep then keep_unknown(named_unknown)
+        when :reject then reject_unknown(named_unknown)
+        else @mapper.log(:info, "ignoring unknown headers: #{@unknown.map(&:first).join(", ")}")
+        end
       end
 
-      def keep_unknown
+      def named_unknown
         blank, named = @unknown.partition { |header, _| header.empty? }
         @mapper.log(:warn, "ignoring #{blank.size} blank headers") if blank.any?
+        named
+      end
+
+      def reject_unknown(named)
+        return if named.empty?
+
+        names = named.map(&:first)
+        @result.add_file_error(:unknown_headers, "unknown headers: #{names.join(", ")}", details: { headers: names })
+      end
+
+      def keep_unknown(named)
         named.each do |header, index|
           next duplicate(header, header) if @indexes.value?(header)
 

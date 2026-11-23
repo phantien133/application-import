@@ -1,7 +1,7 @@
 RSpec.describe ApplicationImport::Definition do
   let(:parsed) do
     {
-      handler: ApplicationImport::Handler, file: { checker: ApplicationImport::FileChecker, max_rows: 100 },
+      handler: ApplicationImport::Handler, file: { checker: ApplicationImport::FileChecker, format: :csv },
       columns: [], validators: { file: [] }, output: { mode: :raw }, on_error: ApplicationImport::ErrorPolicy.new
     }
   end
@@ -104,12 +104,12 @@ RSpec.describe ApplicationImport::Definition do
         define_method(:initialize) { |_name, config| parser_input = config }
         define_method(:parse) { { file: {} } }
       end)
-      ApplicationImport.configure { |config| config.defaults = { on_error: "abort", file: { max_rows: 5 } } }
+      ApplicationImport.configure { |config| config.defaults = { on_error: "abort", file: { max_size: 5 } } }
       dir.join("users.yml").write("on_error: skip\n")
 
       described_class.load(:users)
 
-      expect(parser_input).to eq("on_error" => "skip", "file" => { "max_rows" => 5 })
+      expect(parser_input).to eq("on_error" => "skip", "file" => { "max_size" => 5 })
     end
 
     it "raises ConfigError on YAML that is not safe to load" do
@@ -123,7 +123,7 @@ RSpec.describe ApplicationImport::Definition do
     it "returns the classes resolved by the parser" do
       handler = stub_const("UsersHandler", Class.new(ApplicationImport::Handler))
       validator = stub_const("UsersFileChecker", Class.new(ApplicationImport::FileChecker))
-      definition = build(handler:, file: { checker: validator, max_rows: 100 })
+      definition = build(handler:, file: { checker: validator, format: :csv })
 
       expect([ definition.handler_class, definition.file_checker_class ]).to eq([ handler, validator ])
     end
@@ -139,12 +139,6 @@ RSpec.describe ApplicationImport::Definition do
     it "falls back to the built-in reader for file[:format], csv by default" do
       expect([ build(file: { format: :xlsx }).reader_class, build(file: {}).reader_class ])
         .to eq([ ApplicationImport::Readers::Xlsx, ApplicationImport::Readers::Csv ])
-    end
-  end
-
-  describe "#max_rows" do
-    it "reads file[:max_rows]" do
-      expect(build.max_rows).to eq(100)
     end
   end
 end

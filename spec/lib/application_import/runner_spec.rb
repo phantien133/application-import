@@ -359,6 +359,31 @@ RSpec.describe ApplicationImport::Runner do
       end
     end
 
+    context "with a custom reader that never calls on_headers" do
+      let(:definition) do
+        stub_const("PlainReader", Class.new(ApplicationImport::Readers::Base) do
+          def headers
+            [ "email" ]
+          end
+
+          def each
+            yield ApplicationImport::Readers::RawRow.new(line: 2, values: [ "a@example.com" ])
+            self
+          end
+        end)
+        ApplicationImport::Definition.new(:users, {
+          "handler" => "ImportTestHandler", "file" => { "checker" => "ImportTestFileChecker", "reader" => "PlainReader" },
+          "columns" => { "email" => { "required" => true } }
+        })
+      end
+
+      it "maps the headers at the first row" do
+        runner.call
+
+        expect(runner.rows.map(&:attributes)).to eq([ { email: "a@example.com" } ])
+      end
+    end
+
     it "uses a custom reader from the definition" do
       stub_const("UpcaseReader", Class.new(ApplicationImport::Readers::Csv) do
         private

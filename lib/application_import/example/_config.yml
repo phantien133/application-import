@@ -14,4 +14,4 @@ shared:
 test:
   defaults:
     file:
-      max_rows: 1000
+      max_size: 1048576

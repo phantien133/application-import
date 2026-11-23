@@ -68,9 +68,9 @@ RSpec.describe ApplicationImport::Configuration do
     it "merges shared with the current environment section" do
       dir.join("s.yml").write(<<~YAML)
         shared:
-          defaults: { file: { max_size: 1, max_rows: 2 } }
+          defaults: { file: { max_size: 1, encoding: "UTF-8" } }
         test:
-          defaults: { file: { max_rows: 3 } }
+          defaults: { file: { encoding: "Shift_JIS" } }
         production:
           config_path: /nowhere
       YAML
@@ -78,7 +78,7 @@ RSpec.describe ApplicationImport::Configuration do
       configuration.load_file(dir.join("s.yml"))
 
       expect([ configuration.config_path, configuration.defaults ])
-        .to eq([ Rails.root.join("config/imports"), { "file" => { "max_size" => 1, "max_rows" => 3 } } ])
+        .to eq([ Rails.root.join("config/imports"), { "file" => { "max_size" => 1, "encoding" => "Shift_JIS" } } ])
     end
 
     it "raises on unknown keys, missing files and invalid YAML" do
@@ -94,8 +94,8 @@ RSpec.describe ApplicationImport::Configuration do
   it "loads example/_config.yml" do
     configuration.load_file("lib/application_import/example/_config.yml")
 
-    expect([ configuration.config_path, configuration.defaults.dig("file", "max_rows") ])
-      .to eq([ Rails.root.join("config/imports"), 1000 ])
+    expect([ configuration.config_path, configuration.defaults.dig("file", "max_size") ])
+      .to eq([ Rails.root.join("config/imports"), 1_048_576 ])
   end
 
   describe "#load_settings" do
@@ -117,10 +117,10 @@ RSpec.describe ApplicationImport::Configuration do
 
   describe "#with_defaults" do
     it "deep-merges defaults under the definition config, definition values winning" do
-      configuration.defaults = { file: { max_size: 1, max_rows: 2 }, on_error: "skip" }
+      configuration.defaults = { file: { max_size: 1, encoding: "UTF-8" }, on_error: "skip" }
 
-      expect(configuration.with_defaults("file" => { "max_rows" => 5 }, "columns" => { "email" => nil }))
-        .to eq("file" => { "max_size" => 1, "max_rows" => 5 }, "on_error" => "skip", "columns" => { "email" => nil })
+      expect(configuration.with_defaults("file" => { "encoding" => "Shift_JIS" }, "columns" => { "email" => nil }))
+        .to eq("file" => { "max_size" => 1, "encoding" => "Shift_JIS" }, "on_error" => "skip", "columns" => { "email" => nil })
     end
 
     it "leaves the config untouched without defaults or when it is not a mapping" do

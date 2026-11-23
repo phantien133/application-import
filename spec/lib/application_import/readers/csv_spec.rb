@@ -271,25 +271,6 @@ RSpec.describe ApplicationImport::Readers::Csv do
     end
   end
 
-  describe "max_rows" do
-    let(:file_config) { { "max_rows" => 2 } }
-
-    it "accepts exactly max_rows data rows, the header not counted" do
-      expect(rows.size).to eq(2)
-    end
-
-    context "when exceeded" do
-      let(:content) { "Email,Name\na,1\nb,2\nc,3\n" }
-
-      it "raises too_many_rows after max_rows rows" do
-        yielded = []
-
-        expect { reader.each { |row| yielded << row.line } }.to raise_error(ApplicationImport::Errors::FileError, "file has more than 2 data rows")
-        expect(yielded).to eq([ 2, 3 ])
-      end
-    end
-  end
-
   it "can be iterated again" do
     first = reader.to_a
 

@@ -49,15 +49,6 @@ RSpec.describe ApplicationImport::Readers::Base do
     end
   end
 
-  context "with max_rows" do
-    let(:file_config) { { "max_rows" => 1 } }
-    let(:records) { [ [ 1, %w[ Email ] ], [ 2, %w[ a ] ], [ 3, %w[ b ] ] ] }
-
-    it "raises too_many_rows once exceeded" do
-      expect { reader.to_a }.to raise_error(ApplicationImport::Errors::FileError) { |e| expect(e.code).to eq(:too_many_rows) }
-    end
-  end
-
   describe "#headers?" do
     it "is true by default" do
       expect(reader.headers?).to be(true)
@@ -126,34 +117,6 @@ RSpec.describe ApplicationImport::Readers::Base do
 
     it "skips empty, nil and whitespace-only records but keeps falsy non-blank values" do
       expect(reader.map(&:line)).to eq([ 6, 7 ])
-    end
-  end
-
-  describe "max_rows boundary" do
-    let(:file_config) { { "max_rows" => 2 } }
-    let(:records) { [ [ 1, %w[ Email ] ], [ 2, %w[ a ] ], [ 3, %w[ b ] ] ] }
-
-    it "accepts exactly max_rows rows" do
-      expect(reader.map(&:line)).to eq([ 2, 3 ])
-    end
-
-    context "without a header row" do
-      let(:file_config) { { "max_rows" => 2, "headers" => false } }
-
-      it "counts every record as data" do
-        expect { reader.to_a }.to raise_error(ApplicationImport::Errors::FileError, "file has more than 2 data rows")
-      end
-    end
-
-    context "when exceeded" do
-      let(:records) { [ [ 1, %w[ Email ] ], [ 2, %w[ a ] ], [ 3, %w[ b ] ], [ 4, %w[ c ] ] ] }
-
-      it "yields the allowed rows before raising" do
-        yielded = []
-
-        expect { reader.each { |row| yielded << row.line } }.to raise_error(ApplicationImport::Errors::FileError)
-        expect(yielded).to eq([ 2, 3 ])
-      end
     end
   end
 
