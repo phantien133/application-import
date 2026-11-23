@@ -1,6 +1,6 @@
 module ApplicationImport
   class Definition
-    attr_reader :name, :handler_name, :file, :columns, :validators, :output, :on_error
+    attr_reader :name, :handler_class, :file, :columns, :validators, :output, :on_error
 
     class << self
       def load(name)
@@ -15,8 +15,8 @@ module ApplicationImport
 
     def initialize(name, config)
       @name = name.to_sym
-      parsed = DefinitionParser.new(@name, config).parse
-      @handler_name = parsed[:handler]
+      parsed = Configs::DefinitionParser.new(@name, config).parse
+      @handler_class = parsed[:handler]
       @file = parsed[:file]
       @columns = parsed[:columns]
       @validators = parsed[:validators]
@@ -25,13 +25,8 @@ module ApplicationImport
       freeze
     end
 
-    def handler_class
-      ClassResolver.resolve!(handler_name, base: Handler, default: Handler, error: Errors::InvalidHandlerError)
-    end
-
     def file_validator_class
-      ClassResolver.resolve!(file[:validator], base: FileValidator, default: FileValidator,
-        error: Errors::InvalidFileValidatorError)
+      file[:validator]
     end
 
     def abort_on_error?

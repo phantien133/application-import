@@ -6,7 +6,7 @@ module ApplicationImport
       @definition = definition
     end
 
-    def call(source, errors)
+    def call(source, result)
       raise NotImplementedError, "#{self.class.name}#call"
     end
   end

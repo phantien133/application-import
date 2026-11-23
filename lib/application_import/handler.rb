@@ -7,17 +7,17 @@ module ApplicationImport
       @context = context
     end
 
-    def validate_file_meta(source, errors); end
+    def validate_file_meta(source, result); end
 
     def map_row(attributes, _raw)
       attributes
     end
 
-    def validate_row(row); end
+    def validate_row(row, result); end
 
-    def validate_file(rows, errors); end
+    def validate_file(rows, result); end
 
-    def verify(rows, errors); end
+    def verify(rows, result); end
 
     def transform(rows)
       rows.map(&:attributes)

@@ -1,11 +1,14 @@
 RSpec.describe ApplicationImport::Definition do
   let(:parsed) do
-    { handler: nil, file: { max_rows: 100 }, columns: [], validators: [], output: { mode: :raw }, on_error: :abort }
+    {
+      handler: ApplicationImport::Handler, file: { validator: ApplicationImport::FileValidator, max_rows: 100 },
+      columns: [], validators: [], output: { mode: :raw }, on_error: :abort
+    }
   end
 
   before do
     result = parsed
-    stub_const("ApplicationImport::DefinitionParser", Class.new do
+    stub_const("ApplicationImport::Configs::DefinitionParser", Class.new do
       define_method(:initialize) { |_name, _config| nil }
       define_method(:parse) { result }
     end)
@@ -20,8 +23,8 @@ RSpec.describe ApplicationImport::Definition do
     it "exposes the parsed config and freezes itself" do
       definition = build
 
-      expect([ definition.name, definition.handler_name, definition.file, definition.output, definition.on_error ])
-        .to eq([ :users, nil, { max_rows: 100 }, { mode: :raw }, :abort ])
+      expect([ definition.name, definition.handler_class, definition.output, definition.on_error ])
+        .to eq([ :users, ApplicationImport::Handler, { mode: :raw }, :abort ])
       expect(definition).to be_frozen
     end
   end
@@ -56,36 +59,13 @@ RSpec.describe ApplicationImport::Definition do
     end
   end
 
-  describe "#handler_class" do
-    it "defaults to Handler" do
-      expect(build.handler_class).to eq(ApplicationImport::Handler)
-    end
+  describe "class readers" do
+    it "returns the classes resolved by the parser" do
+      handler = stub_const("UsersHandler", Class.new(ApplicationImport::Handler))
+      validator = stub_const("UsersFileValidator", Class.new(ApplicationImport::FileValidator))
+      definition = build(handler:, file: { validator:, max_rows: 100 })
 
-    it "resolves a Handler subclass" do
-      stub_const("UsersHandler", Class.new(ApplicationImport::Handler))
-
-      expect(build(handler: "UsersHandler").handler_class).to eq(UsersHandler)
-    end
-
-    it "raises InvalidHandlerError for a class not inheriting Handler" do
-      expect { build(handler: "String").handler_class }.to raise_error(ApplicationImport::Errors::InvalidHandlerError)
-    end
-  end
-
-  describe "#file_validator_class" do
-    it "defaults to FileValidator" do
-      expect(build.file_validator_class).to eq(ApplicationImport::FileValidator)
-    end
-
-    it "resolves a FileValidator subclass from file.validator" do
-      stub_const("UsersFileValidator", Class.new(ApplicationImport::FileValidator))
-
-      expect(build(file: { validator: "UsersFileValidator" }).file_validator_class).to eq(UsersFileValidator)
-    end
-
-    it "raises InvalidFileValidatorError for a class not inheriting FileValidator" do
-      expect { build(file: { validator: "String" }).file_validator_class }
-        .to raise_error(ApplicationImport::Errors::InvalidFileValidatorError)
+      expect([ definition.handler_class, definition.file_validator_class ]).to eq([ handler, validator ])
     end
   end
 

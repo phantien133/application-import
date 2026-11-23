@@ -5,6 +5,8 @@ RSpec.describe ApplicationImport::Errors do
       ApplicationImport::Errors::ConfigError => ApplicationImport::Errors::Error,
       ApplicationImport::Errors::FileError => ApplicationImport::Errors::Error,
       ApplicationImport::Errors::CastError => ApplicationImport::Errors::Error,
+      ApplicationImport::Errors::RowError => ApplicationImport::Errors::Error,
+      ApplicationImport::Errors::RowsError => ApplicationImport::Errors::Error,
       ApplicationImport::Errors::InvalidClassError => ApplicationImport::Errors::ConfigError,
       ApplicationImport::Errors::InvalidHandlerError => ApplicationImport::Errors::InvalidClassError,
       ApplicationImport::Errors::InvalidRunnerError => ApplicationImport::Errors::InvalidClassError,
@@ -25,6 +27,34 @@ RSpec.describe ApplicationImport::Errors do
 
     it "accepts a custom code" do
       expect(described_class.new("bad bytes", code: :invalid_encoding).code).to eq(:invalid_encoding)
+    end
+  end
+
+  describe ApplicationImport::Errors::RowError do
+    it "keeps the line, column and code" do
+      error = described_class.new("Email is required", line: 3, column: :email, code: :required)
+
+      expect([ error.message, error.line, error.column, error.code ]).to eq([ "Email is required", 3, "email", :required ])
+    end
+
+    it "defaults the column to nil and the code to :invalid_row" do
+      error = described_class.new("bad row", line: 2)
+
+      expect([ error.column, error.code ]).to eq([ nil, :invalid_row ])
+    end
+  end
+
+  describe ApplicationImport::Errors::RowsError do
+    it "keeps every conflicting line and column" do
+      error = described_class.new("duplicate email", lines: [ 2, 5 ], columns: [ :email ], code: :duplicate)
+
+      expect([ error.message, error.lines, error.columns, error.code ]).to eq([ "duplicate email", [ 2, 5 ], [ "email" ], :duplicate ])
+    end
+
+    it "defaults columns to empty and the code to :rows_conflict" do
+      error = described_class.new("totals do not match", lines: 4)
+
+      expect([ error.lines, error.columns, error.code ]).to eq([ [ 4 ], [], :rows_conflict ])
     end
   end
 

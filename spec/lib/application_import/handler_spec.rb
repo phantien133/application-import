@@ -3,7 +3,7 @@ RSpec.describe ApplicationImport::Handler do
 
   let(:definition) { instance_double(ApplicationImport::Definition) }
   let(:context) { { user_id: 1 } }
-  let(:errors) { [] }
+  let(:result) { ApplicationImport::Result.new }
 
   it "exposes the definition and context" do
     expect([ handler.definition, handler.context ]).to eq([ definition, context ])
@@ -33,12 +33,12 @@ RSpec.describe ApplicationImport::Handler do
   end
 
   it "has no-op validation hooks that add no errors" do
-    handler.validate_file_meta(double, errors)
-    handler.validate_row(double)
-    handler.validate_file([], errors)
-    handler.verify([], errors)
-    handler.after_import(double)
+    handler.validate_file_meta(Object.new, result)
+    handler.validate_row(Object.new, result)
+    handler.validate_file([], result)
+    handler.verify([], result)
+    handler.after_import(result)
 
-    expect(errors).to be_empty
+    expect(result.errors).to be_empty
   end
 end
