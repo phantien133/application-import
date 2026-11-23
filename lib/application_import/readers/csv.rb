@@ -1,9 +1,12 @@
 module ApplicationImport
   module Readers
-    # CSV reader. The content first passes the EncodingGate (BOM, file.encoding,
-    # UTF-8); file.csv options (see Configs::CsvOptionsParser) go to CSV.new, with
+    # CSV reader, streaming: the source passes the EncodingGate chunk by chunk into
+    # a UTF-8 tempfile, which CSV then parses record by record.
+    # file.csv options (see Configs::CsvOptionsParser) go to CSV.new, with
     # file.csv.passthrough merged last, unvalidated.
     #
+    # Line endings: unless row_sep is configured, CRLF and lone CR are turned into LF
+    # first, so files mixing \n, \r\n and \r parse (quoted values get LF too).
     # skip_lines is applied here, not by CSV.new, so skipped lines still count
     # towards line numbers: a record whose raw text matches is dropped. A String is
     # matched literally, like CSV does.
@@ -11,10 +14,15 @@ module ApplicationImport
     class Csv < Base
       private
 
-      def each_record
+      def each_record(&)
         options = parser_options
         skip = skip_pattern(options.delete(:skip_lines))
-        csv = ::CSV.new(content, **options)
+        gate = EncodingGate.new(definition, logger:, normalize_newlines: !options.key?(:row_sep))
+        gate.call(source) { |text| parse(text.io, options, skip, &) }
+      end
+
+      def parse(io, options, skip)
+        csv = ::CSV.new(io, **options)
         line = 1
         while (values = csv.shift)
           yield line, values unless skip&.match?(csv.line)
@@ -35,10 +43,6 @@ module ApplicationImport
 
       def skip_pattern(value)
         value.is_a?(String) ? Regexp.new(Regexp.escape(value)) : value
-      end
-
-      def content
-        @content ||= EncodingGate.new(definition, logger:).call(source).content
       end
 
       # Physical lines consumed by one record, quoted line breaks included.

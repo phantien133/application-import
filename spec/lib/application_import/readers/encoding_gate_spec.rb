@@ -1,42 +1,92 @@
 RSpec.describe ApplicationImport::Readers::EncodingGate do
-  subject(:gate) { described_class.new(definition, logger:) }
-
   let(:log) { StringIO.new }
   let(:logger) { ActiveSupport::Logger.new(log).tap { |l| l.formatter = ->(severity, _, _, msg) { "#{severity} #{msg}\n" } } }
-  let(:encoding) { nil }
   let(:definition) do
     file = encoding ? { "encoding" => encoding } : {}
     ApplicationImport::Definition.new(:users, { "columns" => { "email" => nil }, "file" => file })
   end
 
-  def read(bytes)
-    gate.call(ApplicationImport::Source.new(filename: "u.csv", io: StringIO.new(bytes.b)))
+  def encoding
+    nil
   end
 
-  def rejection(bytes)
-    read(bytes)
+  def gate(**options)
+    described_class.new(definition, logger:, **options)
+  end
+
+  # Content, source encoding and BOM flag of the gated text.
+  def read(bytes, **options)
+    source = ApplicationImport::Source.new(filename: "u.csv", io: StringIO.new(bytes.b))
+    gate(**options).call(source) { |text| [ text.io.read, text.encoding, text.bom ] }
+  end
+
+  def rejection(bytes, **options)
+    read(bytes, **options)
   rescue ApplicationImport::Errors::FileError => e
     [ e.code, e.message ]
   end
 
+  describe "#call" do
+    it "yields a rewound UTF-8 tempfile and returns the block value" do
+      source = ApplicationImport::Source.new(filename: "u.csv", io: StringIO.new("email\n"))
+      seen = nil
+
+      value = gate.call(source) do |text|
+        seen = text
+        [ text.io.pos, text.io.external_encoding, text.io.read, text.io.path ]
+      end
+
+      expect(value.first(3)).to eq([ 0, Encoding::UTF_8, "email\n" ])
+      expect(seen).to be_frozen
+      expect(File.exist?(value.last)).to be(false)
+    end
+
+    it "removes the tempfile when the block raises" do
+      path = nil
+      source = ApplicationImport::Source.new(filename: "u.csv", io: StringIO.new("email\n"))
+
+      expect { gate.call(source) { |text| (path = text.io.path) && raise("boom") } }.to raise_error("boom")
+      expect(File.exist?(path)).to be(false)
+    end
+
+    it "does not yield when the content is rejected" do
+      source = ApplicationImport::Source.new(filename: "u.csv", io: StringIO.new("\xFF".b))
+      yielded = false
+
+      expect { gate.call(source) { yielded = true } }.to raise_error(ApplicationImport::Errors::FileError)
+      expect(yielded).to be(false)
+    end
+
+    it "reads a path-backed source" do
+      Tempfile.create([ "u", ".csv" ]) do |file|
+        file.binmode.write("\xEF\xBB\xBFemail\n") && file.flush
+
+        expect(gate.call(ApplicationImport::Source.build(file.path)) { |text| text.io.read }).to eq("email\n")
+      end
+    end
+  end
+
   context "with the default UTF-8 encoding" do
     it "returns UTF-8 content unchanged" do
-      text = read("email\nnguyễn@example.com\n")
-
-      expect([ text.content, text.content.encoding, text.encoding, text.bom ])
-        .to eq([ "email\nnguyễn@example.com\n", Encoding::UTF_8, Encoding::UTF_8, false ])
+      expect(read("email\nnguyễn@example.com\n")).to eq([ "email\nnguyễn@example.com\n", Encoding::UTF_8, false ])
     end
 
     it "strips a UTF-8 BOM" do
-      text = read("\xEF\xBB\xBFemail\n")
+      expect(read("\xEF\xBB\xBFemail\n")).to eq([ "email\n", Encoding::UTF_8, true ])
+    end
 
-      expect([ text.content, text.bom ]).to eq([ "email\n", true ])
+    it "accepts 4-byte characters" do
+      expect(read("😀@example.com\n").first).to eq("😀@example.com\n")
     end
 
     it "rejects invalid UTF-8 and points at the first bad line" do
       expect(rejection("email\nok\nbad\xFF\n")).to eq([
         :invalid_encoding, "file is not valid UTF-8 (first invalid byte on line 3) [encoding: UTF-8]"
       ])
+    end
+
+    it "rejects a truncated sequence at the end of the file" do
+      expect(rejection("ok\n\xE2\x82")).to eq([ :invalid_encoding, "file is not valid UTF-8 (first invalid byte on line 2) [encoding: UTF-8]" ])
     end
 
     it "rejects a Shift_JIS file read as UTF-8" do
@@ -49,49 +99,71 @@ RSpec.describe ApplicationImport::Readers::EncodingGate do
       ])
     end
 
-    it "logs every rejection as a warning" do
+    it "logs every rejection as a warning with the import name" do
       rejection("bad\xFF")
 
       expect(log.string).to start_with("WARN [ApplicationImport::Readers::EncodingGate:users] rejected: file is not valid UTF-8")
     end
   end
 
-  context "with a configured single-byte or multi-byte encoding" do
-    let(:encoding) { "Shift_JIS" }
-
-    it "transcodes to UTF-8" do
-      text = read("名前,年齢\n".encode("Shift_JIS"))
-
-      expect([ text.content, text.content.encoding, text.encoding ]).to eq([ "名前,年齢\n", Encoding::UTF_8, Encoding::Shift_JIS ])
+  context "with Shift_JIS" do
+    def encoding
+      "Shift_JIS"
     end
 
-    it "rejects bytes that are invalid in that encoding" do
-      expect(rejection("a\n\x82\n").first(2)).to eq([ :invalid_encoding, "file is not valid Shift_JIS (first invalid byte on line 2) [encoding: Shift_JIS]" ])
+    it "transcodes to UTF-8" do
+      expect(read("名前,年齢\n".encode("Shift_JIS"))).to eq([ "名前,年齢\n", Encoding::Shift_JIS, false ])
+    end
+
+    it "rejects bytes that are invalid in that encoding, with the line" do
+      expect(rejection("a\n\x82\n")).to eq([
+        :invalid_encoding, "file is not valid Shift_JIS (first invalid byte on line 2) [encoding: Shift_JIS]"
+      ])
+    end
+
+    it "rejects a character cut at the end of the file" do
+      expect(rejection("a\n\x96".b).first).to eq(:invalid_encoding)
+    end
+
+    it "rejects NUL bytes" do
+      expect(rejection("a\x00b\n").last).to eq("file contains NUL bytes (UTF-16 without BOM or a binary file?) [encoding: Shift_JIS]")
     end
   end
 
   context "with Windows-1252" do
-    let(:encoding) { "Windows-1252" }
+    def encoding
+      "Windows-1252"
+    end
 
     it "transcodes accented characters" do
-      expect(read("caf\xE9\n").content).to eq("café\n")
+      expect(read("caf\xE9\n").first).to eq("café\n")
     end
 
     it "rejects bytes with no UTF-8 mapping" do
-      expect(rejection("a\x81\n")).to match([ :invalid_encoding, /cannot be converted from Windows-1252 to UTF-8|not valid Windows-1252/ ])
+      expect(rejection("ok\na\x81\n")).to eq([
+        :invalid_encoding, "file cannot be converted from Windows-1252 to UTF-8 (first invalid byte on line 2) [encoding: Windows-1252]"
+      ])
+    end
+  end
+
+  context "with ISO-8859-1" do
+    def encoding
+      "ISO-8859-1"
+    end
+
+    it "maps every byte" do
+      expect(read("\xC0\xFF\n").first).to eq("Àÿ\n")
     end
   end
 
   context "with a BOM" do
     it "reads UTF-16LE and warns that the configured encoding is ignored" do
-      text = read("\xFF\xFE".b + "email\n名前\n".encode("UTF-16LE").b)
-
-      expect([ text.content, text.encoding, text.bom ]).to eq([ "email\n名前\n", Encoding::UTF_16LE, true ])
+      expect(read("\xFF\xFE".b + "email\n名前\n".encode("UTF-16LE").b)).to eq([ "email\n名前\n", Encoding::UTF_16LE, true ])
       expect(log.string).to include("WARN", "file has a UTF-16LE BOM, ignoring the configured encoding UTF-8")
     end
 
     it "reads UTF-16BE" do
-      expect(read("\xFE\xFF".b + "email\n".encode("UTF-16BE").b).content).to eq("email\n")
+      expect(read("\xFE\xFF".b + "email\n".encode("UTF-16BE").b).first).to eq("email\n")
     end
 
     it "does not warn when the BOM matches the configured encoding" do
@@ -100,16 +172,35 @@ RSpec.describe ApplicationImport::Readers::EncodingGate do
       expect(log.string).to eq("")
     end
 
+    it "rejects an invalid UTF-16 body with the line" do
+      bytes = "\xFF\xFE".b + "a\n".encode("UTF-16LE").b + "\x00\xD8\x41\x00".b
+
+      expect(rejection(bytes)).to eq([ :invalid_encoding, "file is not valid UTF-16LE (first invalid byte on line 2) [encoding: UTF-16LE]" ])
+    end
+
     it "rejects a truncated UTF-16 body" do
       expect(rejection("\xFF\xFE".b + "ab".encode("UTF-16LE").b + "\x00".b).first).to eq(:invalid_encoding)
+    end
+
+    context "when another encoding is configured" do
+      def encoding
+        "Shift_JIS"
+      end
+
+      it "reads as the BOM says and warns" do
+        expect(read("\xEF\xBB\xBF名前\n").first(2)).to eq([ "名前\n", Encoding::UTF_8 ])
+        expect(log.string).to include("file has a UTF-8 BOM, ignoring the configured encoding Shift_JIS")
+      end
     end
   end
 
   context "with a dummy encoding and no BOM" do
-    let(:encoding) { "UTF-16" }
+    %w[ UTF-16 UTF-32 ].each do |name|
+      it "asks for a BOM for #{name}" do
+        allow(self).to receive(:encoding).and_return(name)
 
-    it "asks for a BOM" do
-      expect(rejection("e\x00".b)).to eq([ :invalid_encoding, "UTF-16 needs a BOM to be read [encoding: UTF-16]" ])
+        expect(rejection("e\x00".b)).to eq([ :invalid_encoding, "#{name} needs a BOM to be read [encoding: #{name}]" ])
+      end
     end
   end
 
@@ -121,79 +212,48 @@ RSpec.describe ApplicationImport::Readers::EncodingGate do
     end
   end
 
-  it "reads a path-backed source" do
-    Tempfile.create([ "u", ".csv" ]) do |file|
-      file.binmode.write("\xEF\xBB\xBFemail\n") && file.flush
+  describe "newline normalization" do
+    it "is off by default" do
+      expect([ gate.normalize_newlines?, read("a\r\nb\rc\n").first ]).to eq([ false, "a\r\nb\rc\n" ])
+    end
 
-      expect(gate.call(ApplicationImport::Source.build(file.path)).content).to eq("email\n")
+    it "turns CRLF and lone CR into LF" do
+      expect(read("a\r\nb\rc\nd\r", normalize_newlines: true).first).to eq("a\nb\nc\nd\n")
+    end
+
+    it "keeps a CRLF split across chunks as one newline" do
+      expect(read("ab\r\ncd\r\n", normalize_newlines: true, chunk_size: 3).first).to eq("ab\ncd\n")
+    end
+
+    it "counts lines after normalization for error hints" do
+      expect(rejection("a\r\nb\r\nc\xFF", normalize_newlines: true).last).to include("first invalid byte on line 3")
     end
   end
 
-  describe "UTF-8 content" do
-    it "accepts 4-byte characters" do
-      expect(read("email\n😀@example.com\n").content).to eq("email\n😀@example.com\n")
+  describe "streaming in chunks" do
+    it "keeps UTF-8 characters split across chunks" do
+      expect(read("nguyễn😀名前\n" * 3, chunk_size: 1).first).to eq("nguyễn😀名前\n" * 3)
     end
 
-    it "rejects an overlong or truncated sequence at the end of the file" do
-      expect(rejection("ok\n\xE2\x82").first).to eq(:invalid_encoding)
+    it "keeps Shift_JIS characters split across chunks" do
+      allow(self).to receive(:encoding).and_return("Shift_JIS")
+
+      expect(read("名前\n年齢\n".encode("Shift_JIS"), chunk_size: 1).first).to eq("名前\n年齢\n")
     end
 
-    it "returns a UTF-8 String even from binary bytes" do
-      expect(read("a".b).content.encoding).to eq(Encoding::UTF_8)
+    it "detects a BOM in the first chunk" do
+      expect(read("\xEF\xBB\xBFab\n", chunk_size: 3)).to eq([ "ab\n", Encoding::UTF_8, true ])
     end
-  end
 
-  context "with ISO-8859-1" do
-    let(:encoding) { "ISO-8859-1" }
-
-    it "maps every byte" do
-      expect(read("\xC0\xFF\n").content).to eq("Àÿ\n")
+    it "reports the line of an invalid byte in a later chunk" do
+      expect(rejection("a\nb\nc\n\xFF", chunk_size: 2).last).to include("first invalid byte on line 4")
     end
-  end
 
-  context "with a configured encoding that contains NUL after transcoding" do
-    let(:encoding) { "Shift_JIS" }
+    it "reads a big file without loading it at once" do
+      content = "email,name\n" + ("a@example.com,Ann\n" * 20_000)
 
-    it "rejects NUL bytes" do
-      expect(rejection("a\x00b\n").first(2)).to eq([ :invalid_encoding, "file contains NUL bytes (UTF-16 without BOM or a binary file?) [encoding: Shift_JIS]" ])
+      expect(read(content).first.bytesize).to eq(content.bytesize)
     end
-  end
-
-  context "with a UTF-8 BOM but another configured encoding" do
-    let(:encoding) { "Shift_JIS" }
-
-    it "reads as UTF-8 and warns" do
-      text = read("\xEF\xBB\xBF名前\n")
-
-      expect([ text.content, text.encoding ]).to eq([ "名前\n", Encoding::UTF_8 ])
-      expect(log.string).to include("file has a UTF-8 BOM, ignoring the configured encoding Shift_JIS")
-    end
-  end
-
-  context "with an invalid UTF-16 body" do
-    it "rejects it without a line hint (not ASCII compatible)" do
-      bytes = "\xFF\xFE".b + "\x00\xD8\x41\x00".b
-
-      expect(rejection(bytes)).to eq([ :invalid_encoding, "file is not valid UTF-16LE [encoding: UTF-16LE]" ])
-    end
-  end
-
-  context "with a UTF-32 dummy encoding and no BOM" do
-    let(:encoding) { "UTF-32" }
-
-    it "asks for a BOM" do
-      expect(rejection("a\x00\x00\x00").last).to eq("UTF-32 needs a BOM to be read [encoding: UTF-32]")
-    end
-  end
-
-  it "returns an immutable Text" do
-    expect(read("email\n")).to be_frozen
-  end
-
-  it "uses the definition's import name in the log prefix" do
-    rejection("\xFF")
-
-    expect(log.string).to include("[ApplicationImport::Readers::EncodingGate:users]")
   end
 
   it "defaults the logger to ApplicationImport.logger" do

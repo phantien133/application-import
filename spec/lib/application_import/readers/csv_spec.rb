@@ -38,11 +38,14 @@ RSpec.describe ApplicationImport::Readers::Csv do
       expect(reader.headers).to be_nil
     end
 
-    it "strips header names" do
-      reader.send(:content).replace(" Email , Name\nx,y\n")
-      reader.to_a
+    context "with padded header names" do
+      let(:content) { " Email , Name\nx,y\n" }
 
-      expect(reader.headers).to eq(%w[ Email Name ])
+      it "strips them" do
+        reader.to_a
+
+        expect(reader.headers).to eq(%w[ Email Name ])
+      end
     end
 
     context "with leading blank lines" do
@@ -100,8 +103,34 @@ RSpec.describe ApplicationImport::Readers::Csv do
     context "with CRLF line endings" do
       let(:content) { "Email,Note\r\na,\"two\r\nlines\"\r\n\r\nb,x\r\n" }
 
-      it "counts lines the same way and strips the row separator" do
-        expect(rows).to eq([ [ 2, [ "a", "two\r\nlines" ] ], [ 5, %w[ b x ] ] ])
+      it "counts lines the same way, turning line breaks into LF" do
+        expect(rows).to eq([ [ 2, [ "a", "two\nlines" ] ], [ 5, %w[ b x ] ] ])
+      end
+    end
+
+    context "with mixed LF, CRLF and CR line endings" do
+      let(:content) { "Email,Note\na,1\r\nb,\"x\r\ny\"\rc,3\n\r\nd,4" }
+
+      it "parses every record with its physical line" do
+        expect(rows).to eq([ [ 2, %w[ a 1 ] ], [ 3, [ "b", "x\ny" ] ], [ 5, %w[ c 3 ] ], [ 7, %w[ d 4 ] ] ])
+      end
+    end
+
+    context "with mixed line endings and an explicit row_sep" do
+      let(:file_config) { { "csv" => { "row_sep" => "\r\n" } } }
+      let(:content) { "Email,Note\r\na,\"x\ny\"\r\nb,2\r\n" }
+
+      it "does not normalize, keeping LF inside values" do
+        expect(rows.map(&:last)).to eq([ [ "a", "x\ny" ], %w[ b 2 ] ])
+      end
+    end
+
+    context "with row_sep given through passthrough" do
+      let(:file_config) { { "csv" => { "passthrough" => { "row_sep" => "\r\n" } } } }
+      let(:content) { "Email\r\na\r\n" }
+
+      it "does not normalize either" do
+        expect(rows.map(&:last)).to eq([ [ "a" ] ])
       end
     end
   end
@@ -114,10 +143,12 @@ RSpec.describe ApplicationImport::Readers::Csv do
     end
   end
 
-  it "keeps empty cells as nil and quoted empty cells as empty strings" do
-    reader.send(:content).replace("Email,Name\na,\nb,\"\"\n")
+  context "with empty cells" do
+    let(:content) { "Email,Name\na,\nb,\"\"\n" }
 
-    expect(rows).to eq([ [ 2, [ "a", nil ] ], [ 3, [ "b", "" ] ] ])
+    it "keeps unquoted ones as nil and quoted ones as empty strings" do
+      expect(rows).to eq([ [ 2, [ "a", nil ] ], [ 3, [ "b", "" ] ] ])
+    end
   end
 
   context "with csv options" do
@@ -284,11 +315,34 @@ RSpec.describe ApplicationImport::Readers::Csv do
     end
   end
 
-  it "reads the source once across iterations" do
-    allow(ApplicationImport::Readers::EncodingGate).to receive(:new).and_call_original
-    2.times { reader.to_a }
+  describe "streaming" do
+    it "streams the source through the gate on every iteration and parses from its tempfile" do
+      paths = []
+      allow(::CSV).to receive(:new).and_wrap_original { |original, io, **options| (paths << io.path) && original.call(io, **options) }
 
-    expect(ApplicationImport::Readers::EncodingGate).to have_received(:new).once
+      2.times { reader.to_a }
+
+      expect(paths.size).to eq(2)
+      expect(paths).to all(satisfy { |path| !File.exist?(path) })
+    end
+
+    it "removes the tempfile when the consumer stops early" do
+      path = nil
+      allow(::CSV).to receive(:new).and_wrap_original { |original, io, **options| (path = io.path) && original.call(io, **options) }
+
+      expect(reader.first.line).to eq(2)
+      expect(File.exist?(path)).to be(false)
+    end
+
+    context "with a big file" do
+      let(:content) { "Email,Name\n" + ("a@example.com,Ann\n" * 30_000) }
+
+      it "yields every row with its line" do
+        lines = reader.map(&:line)
+
+        expect([ lines.size, lines.first, lines.last ]).to eq([ 30_000, 2, 30_001 ])
+      end
+    end
   end
 
   it "hands its logger to the encoding gate" do
