@@ -391,6 +391,55 @@ RSpec.describe ApplicationImport::Runner::Rows do
     end
   end
 
+  describe "settling" do
+    def content
+      "email\n" + (1..50).map { |i| "u#{i}@x.io\n" }.join
+    end
+
+    it "only settles rows that got new errors, not every row read so far" do
+      settled = []
+      RowsSpecRunner.define_method(:settle) { |row, **options| (settled << row.line) && super(row, **options) }
+      stub_const("FlagTen", validator(:row) { |row, _result| row.add_error(code: :ten, message: "x") if row.line == 10 })
+      allow(self).to receive(:config).and_return("validators" => { "row" => [ { "class" => "FlagTen" } ] }, "on_error" => "skip")
+
+      run
+
+      expect(settled).to eq([ 10 ])
+    end
+
+    it "settles a row flagged later, from another row's check" do
+      stub_const("FlagFirst", validator(:rows) do |row, _result, _cache|
+        raise ApplicationImport::Errors::RowsError.new("dup", lines: [ 2 ], code: :dup) if row.line == 10
+      end)
+      allow(self).to receive(:config).and_return("validators" => { "rows" => [ { "class" => "FlagFirst" } ] }, "on_error" => "skip")
+
+      result = run
+
+      expect([ result.errors.map { |e| [ e.line, e.code ] }, result.stats[:invalid] ]).to eq([ [ [ 2, :dup ] ], 1 ])
+      expect(events.find { |event| event.first == :write_rows }.last).not_to include(2)
+    end
+
+    it "records the errors of every flagged row before an abort halts" do
+      stub_const("FlagMany", validator(:verify) do |_rows, _result, _cache|
+        raise ApplicationImport::Errors::RowsError.new("bad", lines: [ 5, 3, 7 ], code: :bad)
+      end)
+      allow(self).to receive(:config).and_return("validators" => { "verify" => [ { "class" => "FlagMany" } ] })
+
+      result = run
+
+      expect([ result.status, result.errors.map(&:line) ]).to eq([ :failed, [ 3, 5, 7 ] ])
+    end
+
+    it "settles the current row first, then the others in line order" do
+      stub_const("FlagBack", validator(:rows) do |row, _result, _cache|
+        raise ApplicationImport::Errors::RowsError.new("pair", lines: [ row.line, 4, 2 ], code: :pair) if row.line == 6
+      end)
+      allow(self).to receive(:config).and_return("validators" => { "rows" => [ { "class" => "FlagBack" } ] }, "on_error" => "skip")
+
+      expect(run.errors.map(&:line)).to eq([ 6, 2, 4 ])
+    end
+  end
+
   describe "unknown lines" do
     it "raise UnknownLineError in the row stage too, instead of using the current row" do
       stub_const("OffByOne", validator(:row) { |row, _result| raise ApplicationImport::Errors::RowError.new("x", line: row.line - 1) })

@@ -73,7 +73,7 @@ module ApplicationImport
       def build_row(raw)
         map_headers(Array(reader.headers)) unless @header_map
         result.increment(:total)
-        row = Row.new(line: raw.line, attributes: @header_map.attributes(raw.values), raw: raw.values)
+        row = Row.new(line: raw.line, attributes: @header_map.attributes(raw.values), raw: raw.values, pending: @pending_rows)
         @rows_by_line[row.line] = row
       end
 

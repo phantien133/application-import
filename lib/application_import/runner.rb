@@ -6,6 +6,7 @@ module ApplicationImport
     include Constants
     include Logging
     include Rows
+    include Lifecycle
     include RowMapping
 
     attr_reader :definition, :source, :context, :handler, :result, :cache
@@ -18,6 +19,7 @@ module ApplicationImport
       @handler = definition.handler_class.new(definition, @context)
       @result = Result.new
       @rows_by_line = {}
+      @pending_rows = Set.new.compare_by_identity
       @cache = {}
     end
 
@@ -26,13 +28,18 @@ module ApplicationImport
       @reader ||= definition.reader_class.new(definition, source, logger:)
     end
 
+    # Returns the result. Any exception escaping the steps (a bug in custom code, a
+    # library or database error, an interrupt) first marks the result failed with an
+    # unexpected_error file error, so close_reader, the summary log and
+    # handler.after_import all see the real outcome; it is then re-raised.
     def call
       catch(HALT) { run_steps }
       result
+    rescue Exception => e # rubocop:disable Lint/RescueException -- recorded, then re-raised
+      fail_unexpectedly(e)
+      raise
     ensure
-      close_reader
-      info("finished #{source.filename}: #{result.status}, #{result.stats.map { |key, value| "#{key} #{value}" }.join(", ")}")
-      handler.after_import(result)
+      finish
     end
 
     private
@@ -78,23 +85,6 @@ module ApplicationImport
 
     def file_checker
       definition.file_checker_class.new(definition, logger:)
-    end
-
-    # The reader may hold the file open from here until close_reader (after process).
-    def open_reader
-      reader.open
-      @reader_open = true
-    end
-
-    # Runs after process, whatever happened; a failure to close is logged, not raised,
-    # so it never hides the import's own result or exception.
-    def close_reader
-      return unless @reader_open
-
-      @reader_open = false
-      reader.close
-    rescue => e
-      error("closing the reader failed: #{e.class}: #{e.message}")
     end
 
     # Headers are checked before the first data row. A reader that knows them up front

@@ -54,6 +54,20 @@ RSpec.describe ApplicationImport::Validators::UniqueInFile do
     expect([ check([ { email: "a" } ]), check([ { email: "a" } ]) ]).to eq([ [], [] ])
   end
 
+  it "raises ConfigError when a key is not in the row attributes (e.g. renamed by a mapper)" do
+    row = ApplicationImport::Row.new(line: 2, attributes: { user_email: "a", name: "x" }, raw: [])
+    validator = described_class.new(definition, { keys: %i[ email name ] })
+
+    expect { validator.call(row, result, {}) }.to raise_error(ApplicationImport::Errors::ConfigError,
+      "users: unique_in_file keys not in the row attributes: email (attributes: user_email, name)")
+  end
+
+  it "accepts a key present with a nil value" do
+    row = ApplicationImport::Row.new(line: 2, attributes: { email: nil }, raw: [])
+
+    expect { described_class.new(definition, { keys: [ :email ] }).call(row, result, {}) }.not_to raise_error
+  end
+
   it "exposes keys and case_sensitive" do
     validator = described_class.new(definition, { keys: [ :email ], case_sensitive: false })
 

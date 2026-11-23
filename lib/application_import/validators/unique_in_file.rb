@@ -2,12 +2,15 @@ module ApplicationImport
   module Validators
     # type: unique_in_file — rows stage: a row whose keys repeat an earlier row of the
     # file gets a :duplicate error (details: keys, first line).
-    #   keys:           column keys forming the identity (required)
+    #   keys:           attribute keys forming the identity (required); with transformers
+    #                   or a mapper, the names they produce. A key missing from the row's
+    #                   attributes raises Errors::ConfigError (the run fails).
     #   case_sensitive: compare String values with case (default true)
     # Rows with a blank key value are not checked. Rows that stopped before this check
     # (errors under row_errors: first) are not remembered.
     class UniqueInFile < RowsValidator
       def call(row, _result, _cache)
+        check_keys(row)
         values = key_values(row)
         return if values.nil?
 
@@ -27,6 +30,14 @@ module ApplicationImport
       end
 
       private
+
+      def check_keys(row)
+        missing = keys.reject { |key| row.attributes.key?(key) }
+        return if missing.empty?
+
+        raise Errors::ConfigError, "#{definition.name}: unique_in_file keys not in the row attributes: #{missing.join(", ")} " \
+                                   "(attributes: #{row.attributes.keys.join(", ")})"
+      end
 
       # Lines already seen by this run's instance, by key values.
       def seen

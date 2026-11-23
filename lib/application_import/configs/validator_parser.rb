@@ -96,7 +96,7 @@ module ApplicationImport
       def check_unique_in_file(options, path)
         check_keys(options, UNIQUE_IN_FILE_KEYS, path)
         options[:keys] = names(options[:keys], "#{path}.keys").map(&:to_sym)
-        check_columns(options[:keys], @column_keys, "#{path}.keys")
+        check_columns(options[:keys], @column_keys, "#{path}.keys") if @column_keys
         boolean(options[:case_sensitive], "#{path}.case_sensitive") if options.key?(:case_sensitive)
       end
     end

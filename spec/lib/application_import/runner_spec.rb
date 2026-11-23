@@ -276,6 +276,64 @@ RSpec.describe ApplicationImport::Runner do
       expect { runner.call }.to raise_error(RuntimeError, "boom")
       expect(runner.handler.calls.last).to eq([ :after_import, runner.result ])
     end
+
+    it "marks the result failed with an unexpected_error before after_import sees it" do
+      statuses = []
+      ImportTestHandler.define_method(:after_import) { |result| statuses << [ result.status, result.errors.map(&:to_h) ] }
+
+      expect { runner.call }.to raise_error(RuntimeError)
+      expect(statuses).to eq([ [ :failed, [ { code: :unexpected_error, message: "import stopped by RuntimeError: boom",
+                                              details: { exception: "RuntimeError" } } ] ] ])
+    end
+
+    it "logs the exception and a failed summary" do
+      log = StringIO.new
+      runner.instance_variable_set(:@logger, ActiveSupport::Logger.new(log))
+
+      expect { runner.call }.to raise_error(RuntimeError)
+      expect(log.string).to include("RuntimeError: boom", "finished users.csv: failed")
+    end
+
+    it "keeps errors recorded before the exception" do
+      runner.singleton_class.define_method(:write_rows) do
+        result.add_row_error(line: 2, code: :x, message: "x")
+        raise "boom"
+      end
+
+      expect { runner.call }.to raise_error(RuntimeError)
+      expect(runner.result.errors.map(&:code)).to eq(%i[ x unexpected_error ])
+    end
+  end
+
+  context "when a non-StandardError exception escapes (e.g. Interrupt)" do
+    let(:processor) { -> { raise Interrupt } }
+
+    it "also marks the result failed, calls after_import and re-raises" do
+      expect { runner.call }.to raise_error(Interrupt)
+      expect([ runner.result.status, runner.handler.calls.last.first ]).to eq([ :failed, :after_import ])
+    end
+  end
+
+  context "when after_import raises" do
+    before { ImportTestHandler.define_method(:after_import) { |_result| raise "hook broke" } }
+
+    it "returns the result, logging and reporting the hook failure" do
+      log = StringIO.new
+      runner.instance_variable_set(:@logger, ActiveSupport::Logger.new(log))
+      allow(Rails.error).to receive(:report)
+
+      expect(runner.call.status).to eq(:completed)
+      expect(log.string).to include("after_import failed: RuntimeError: hook broke")
+      expect(Rails.error).to have_received(:report).with(an_instance_of(RuntimeError), handled: true, context: { import: "users" })
+    end
+
+    context "when a step raised too" do
+      let(:processor) { -> { raise "boom" } }
+
+      it "re-raises the original exception" do
+        expect { runner.call }.to raise_error(RuntimeError, "boom")
+      end
+    end
   end
 
   describe "processing the file" do

@@ -132,7 +132,7 @@ validators:
       keys: [ email ]
       case_sensitive: false
     - type: unique_in_file
-      keys: [ name, joined_on ]
+      keys: [ name, created_on ]   # names after the mapper (joined_on was renamed); a missing key fails the run
   verify:
     - class: Imports::Users::ManagersExistValidator
 

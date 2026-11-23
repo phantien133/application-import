@@ -72,6 +72,22 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     expect(config_error({ "file" => { "unknown_headers" => "drop" } })).to eq([ "file.unknown_headers must be one of skip, keep, assign, reject" ])
   end
 
+  describe "validator keys" do
+    let(:unique) { { "validators" => { "rows" => [ { "type" => "unique_in_file", "keys" => [ "user_email" ] } ] } } }
+
+    it "are checked against the declared columns without transformers or mapper" do
+      expect(config_error(unique)).to eq([ "validators.rows[0].keys references unknown columns: user_email" ])
+    end
+
+    it "are left to the run with a mapper or transformers" do
+      mapper = { "type" => "rename", "attributes" => { "email" => "user_email" } }
+      transformers = [ { "type" => "concat", "from" => [ "email" ], "to" => "user_email" } ]
+
+      expect { parse(unique.merge("mapper" => mapper)) }.not_to raise_error
+      expect { parse(unique.merge("transformers" => transformers)) }.not_to raise_error
+    end
+  end
+
   it "rejects an unknown file.extra_cells" do
     expect(config_error({ "file" => { "extra_cells" => "drop" } })).to eq([ "file.extra_cells must be one of warn, ignore, reject" ])
   end

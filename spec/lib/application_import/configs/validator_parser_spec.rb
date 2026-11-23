@@ -109,6 +109,12 @@ RSpec.describe ApplicationImport::Configs::ValidatorParser do
     )
   end
 
+  it "skips the column check of unique_in_file keys without column keys (names produced later)" do
+    described_class.new({ "rows" => [ { "type" => "unique_in_file", "keys" => [ "user_email" ] } ] }, nil, errors).parse
+
+    expect(errors).to be_empty
+  end
+
   it "requires unique_in_file keys" do
     parse({ "rows" => [ { "type" => "unique_in_file" } ] })
 

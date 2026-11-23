@@ -1,13 +1,15 @@
 module ApplicationImport
-  # A data row through the pipeline. read_file builds it with the header-mapped
-  # attributes; process casts them, lets the handler map them, builds the record and
-  # validates. Errors are collected on the row; the Runner records the new ones in the
-  # result and applies on_error (take_new_errors).
+  # A data row through the pipeline. process builds it with the header-mapped
+  # attributes, casts them, transforms / maps them, builds the record and validates.
+  # Errors are collected on the row; the Runner records the new ones in the result and
+  # applies on_error (take_new_errors).
+  # pending: a Set (by identity) shared by the run's rows; add_error puts the row in it
+  # so the Runner settles only rows that got new errors, wherever they were raised.
   class Row
     attr_reader :line, :raw, :errors, :generated_keys
     attr_accessor :attributes, :record
 
-    def initialize(line:, attributes:, raw:, record: nil)
+    def initialize(line:, attributes:, raw:, record: nil, pending: nil)
       @line = line
       @attributes = attributes
       @raw = raw
@@ -16,10 +18,12 @@ module ApplicationImport
       @generated_keys = []
       @recorded = 0
       @skipped = false
+      @pending = pending
     end
 
     def add_error(code:, message:, column: nil, details: nil)
       errors << ErrorEntry.new(line:, column:, code: code.to_sym, message:, details:)
+      @pending&.add(self)
       self
     end
 

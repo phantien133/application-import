@@ -732,6 +732,23 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
         expect(unique_run("case_sensitive" => false)).to eq([ [ [ 3, :duplicate ], [ 4, :duplicate ] ], %w[ Ann ] ])
       end
 
+      it "uses names produced by the mapper" do
+        result = run("Email,Name\na@x.io,Ann\na@x.io,Bob\n", mapper: { "type" => "rename", "attributes" => { "email" => "user_email" } },
+          validators: { "rows" => [ { "type" => "unique_in_file", "keys" => [ "user_email" ] } ] }, on_error: "skip")
+
+        expect(result.errors.map { |e| [ e.line, e.code ] }).to eq([ [ 3, :duplicate ] ])
+      end
+
+      it "fails the run when a key is missing from the attributes at run time" do
+        definition = definition(mapper: { "type" => "rename", "attributes" => { "email" => "user_email" } },
+          validators: { "rows" => [ { "type" => "unique_in_file", "keys" => [ "email" ] } ] })
+        runner = ConfigSpecRunner.new(definition, ApplicationImport::Source.build(StringIO.new("Email,Name\na@x.io,Ann\n"), filename: "u.csv"),
+          logger:)
+
+        expect { runner.call }.to raise_error(ApplicationImport::Errors::ConfigError, /unique_in_file keys not in the row attributes: email/)
+        expect([ runner.result.status, runner.result.errors.map(&:code) ]).to eq([ :failed, [ :unexpected_error ] ])
+      end
+
       it "rejects unknown key columns" do
         expect(config_error(validators: { "rows" => [ { "type" => "unique_in_file", "keys" => [ "phone" ] } ] }))
           .to eq("users: validators.rows[0].keys references unknown columns: phone")

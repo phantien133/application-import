@@ -51,8 +51,11 @@ module ApplicationImport
         TransformerParser.new(@config["transformers"], @errors).parse
       end
 
+      # Validator keys are checked against the declared columns only without transformers
+      # or mapper: those can produce other names, checked when the import runs.
       def parse_validators
-        ValidatorParser.new(@config["validators"], @column_keys, @errors).parse
+        static = @config["transformers"].blank? && @config["mapper"].nil?
+        ValidatorParser.new(@config["validators"], static ? @column_keys : nil, @errors).parse
       end
 
       def resolve_classes(parsed)

@@ -120,14 +120,20 @@ module ApplicationImport
       end
 
       # Settles the given row first, then any other row that got new errors.
+      # Settles only the rows that got new errors (Row#add_error marks them pending):
+      # the given row first, then the others in line order. Every row's errors are
+      # recorded before an abort halts.
       def settle_all(row = nil)
-        settle(row) if row
-        @rows_by_line.each_value { |other| settle(other) unless other.equal?(row) }
+        rows = @pending_rows.to_a.sort_by(&:line)
+        rows.unshift(rows.delete(row)) if row && rows.include?(row)
+        actions = rows.map { |pending| settle(pending, halt: false) }
+        halt! if actions.include?(:abort)
       end
 
       # Records the row's new errors and applies on_error; returns the action. With
       # halt: false an abort is only returned (the writer stops and the Runner halts).
       def settle(row, halt: true)
+        @pending_rows.delete(row)
         errors = row.take_new_errors
         return if errors.empty?
 

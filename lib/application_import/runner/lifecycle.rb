@@ -1,0 +1,49 @@
+module ApplicationImport
+  class Runner
+    # Reader open / close and the end of a run: unexpected exceptions recorded on the
+    # result, summary log and handler.after_import.
+    module Lifecycle
+      private
+
+      # The reader may hold the file open from here until close_reader (after process).
+      def open_reader
+        reader.open
+        @reader_open = true
+      end
+
+      # Runs after process, whatever happened; a failure to close is logged, not raised,
+      # so it never hides the import's own result or exception.
+      def close_reader
+        return unless @reader_open
+
+        @reader_open = false
+        reader.close
+      rescue => e
+        error("closing the reader failed: #{e.class}: #{e.message}")
+      end
+
+      def fail_unexpectedly(exception)
+        result.add_file_error(:unexpected_error, "import stopped by #{exception.class}: #{exception.message}",
+          details: { exception: exception.class.name })
+        result.halt!
+        error("#{exception.class}: #{exception.message}")
+      end
+
+      # Always runs: close the reader, log the summary, call after_import. A failure in
+      # after_import is logged and reported, never raised: rows may already be committed,
+      # and raising would hide the result (or the original exception).
+      def finish
+        close_reader
+        info("finished #{source.filename}: #{result.status}, #{result.stats.map { |key, value| "#{key} #{value}" }.join(", ")}")
+        run_after_import
+      end
+
+      def run_after_import
+        handler.after_import(result)
+      rescue => e
+        error("after_import failed: #{e.class}: #{e.message}")
+        Rails.error.report(e, handled: true, context: { import: definition.name.to_s })
+      end
+    end
+  end
+end
