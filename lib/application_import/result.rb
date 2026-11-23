@@ -4,8 +4,8 @@ module ApplicationImport
 
     attr_reader :records, :errors, :stats
 
-    # dry_run: the run's database changes were rolled back (stats say what would have
-    # been written).
+    # dry_run: the run stopped before the write step: nothing written (written 0, no
+    # records), stats[:valid] is what would have been written.
     def initialize(dry_run: false)
       @records = []
       @errors = []

@@ -13,8 +13,8 @@ module ApplicationImport
 
     attr_reader :definition, :source, :context, :handler, :result, :cache
 
-    # dry_run: run every step, writes included, inside one transaction that is always
-    # rolled back (see Runner::Lifecycle#within_dry_run).
+    # dry_run: run every step up to the write and stop there: nothing is written (no
+    # transaction is held), result.stats[:valid] says how many rows would be written.
     def initialize(definition, source, context: {}, logger: ApplicationImport.logger, dry_run: false)
       @definition = definition
       @source = source
@@ -38,7 +38,7 @@ module ApplicationImport
     # unexpected_error file error, so close_reader, the summary log and
     # handler.after_import all see the real outcome; it is then re-raised.
     def call
-      within_dry_run { catch(HALT) { run_steps } }
+      catch(HALT) { run_steps }
       result
     rescue Exception => e # rubocop:disable Lint/RescueException -- recorded, then re-raised
       fail_unexpectedly(e)
@@ -57,6 +57,7 @@ module ApplicationImport
       debug { "start #{source.filename}: #{settings_summary}" }
       STEPS.each do |name|
         next if name == :verify && streaming?
+        break debug { "dry run: stopping before write_rows" } if name == :write_rows && result.dry_run?
 
         step(name) { send(name) }
       end

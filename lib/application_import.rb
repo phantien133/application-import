@@ -48,7 +48,7 @@ module ApplicationImport
     end
 
     # `logger:` overrides the configured logger for this run only.
-    # dry_run: every step runs, writes included, then the changes are rolled back.
+    # dry_run: every step runs except the write (no transaction, nothing written).
     def run(definition_or_name, file, filename: nil, context: {}, runner: nil, logger: nil, dry_run: false)
       definition = definition_or_name.is_a?(Definition) ? definition_or_name : definition(definition_or_name)
       runner_class = ClassResolver.resolve!(runner, base: Runner, default: Runner, error: Errors::InvalidRunnerError)

@@ -1171,53 +1171,67 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
 
     let(:content) { "Email,Name\na@x.io,Ann\nb@x.io,\nc@x.io,Cy\n" }
 
-    def dry(output = {}, on_error: "skip")
-      ApplicationImport.run(definition(output: { "model" => "DryRunUser", **output }, on_error:), StringIO.new(content),
+    def dry(output = {}, on_error: "skip", **config)
+      ApplicationImport.run(definition(output: { "model" => "DryRunUser", **output }, on_error:, **config), StringIO.new(content),
         filename: "users.csv", logger:, dry_run: true)
     end
 
-    it "runs every step, writes included, then rolls back" do
+    it "runs every step up to the write, then stops without writing" do
       %w[ bulk save ].each do |mode|
         result = dry({ "mode" => mode })
 
-        expect([ result.dry_run?, result.status, result.stats.values_at(:total, :valid, :invalid, :written), result.errors.map(&:code) ])
-          .to eq([ true, :completed_with_errors, [ 3, 2, 1, 2 ], %i[ not_saved ] ])
+        expect([ result.dry_run?, result.status, result.stats.values_at(:total, :valid, :invalid, :written), result.errors ])
+          .to eq([ true, :completed, [ 3, 3, 0, 0 ], [] ])
         expect(DryRunUser.count).to eq(0)
       end
     end
 
-    it "rolls back when the import halts" do
-      result = dry({}, on_error: "abort")
+    it "reports row errors of the validators (the write's own failures are not known)" do
+      result = dry({}, validators: { "row" => [ { "type" => "model" } ] })
 
-      expect([ result.status, DryRunUser.count ]).to eq([ :failed, 0 ])
+      expect([ result.status, result.stats.values_at(:valid, :invalid, :written), result.errors.map(&:line) ])
+        .to eq([ :completed_with_errors, [ 2, 1, 0 ], [ 3 ] ])
     end
 
-    it "rolls back stream batches too" do
+    it "holds no transaction while it runs" do
+      open_transactions = nil
+      stub_const("DryHandler", Class.new(ApplicationImport::Handler) do
+        define_method(:verify) { |_rows, _result, _cache| open_transactions = DryRunUser.connection.open_transactions }
+      end)
+      before = DryRunUser.connection.open_transactions
+      ApplicationImport.run(definition(handler: "DryHandler", output: { "model" => "DryRunUser" }), StringIO.new(content),
+        filename: "u.csv", logger:, dry_run: true)
+
+      expect(open_transactions).to eq(before)
+    end
+
+    it "does not call the writer" do
+      stub_const("DryHandler", Class.new(ApplicationImport::Handler) do
+        define_method(:write) { |_rows, _writer| raise "written" }
+      end)
+
+      result = ApplicationImport.run(definition(handler: "DryHandler", output: { "model" => "DryRunUser" }), StringIO.new(content),
+        filename: "u.csv", logger:, dry_run: true)
+
+      expect(result.status).to eq(:completed)
+    end
+
+    it "writes no stream batch and releases the records" do
       result = dry({ "stream" => true, "batch_size" => 1 })
 
-      expect([ result.stats[:written], DryRunUser.count ]).to eq([ 2, 0 ])
+      expect([ result.stats.values_at(:valid, :written), DryRunUser.count ]).to eq([ [ 3, 0 ], 0 ])
     end
 
-    it "rolls back and re-raises on an unexpected exception" do
-      stub_const("Boom", Class.new(ApplicationImport::Transformers::Base) do
-        define_method(:call) { |_attributes, row| (row.line == 3) ? raise("boom") : nil }
-      end)
-      definition = definition(output: { "model" => "DryRunUser", "stream" => true, "batch_size" => 1 }, transformers: [ { "class" => "Boom" } ])
+    it "still halts on abort" do
+      result = dry({}, on_error: "abort", validators: { "row" => [ { "type" => "model" } ] })
 
-      expect { ApplicationImport.run(definition, StringIO.new(content), filename: "u.csv", logger:, dry_run: true) }.to raise_error("boom")
-      expect(DryRunUser.count).to eq(0)
+      expect([ result.status, result.dry_run? ]).to eq([ :failed, true ])
     end
 
-    it "keeps the caller's open transaction usable" do
-      dry
-
-      expect(DryRunUser.create!(email: "x", name: "X")).to be_persisted
-    end
-
-    it "calls after_import after the rollback, with the dry run result" do
+    it "calls after_import with the dry run result" do
       seen = []
       stub_const("DryHandler", Class.new(ApplicationImport::Handler) do
-        define_method(:after_import) { |result| seen << [ result.dry_run?, DryRunUser.count ] }
+        define_method(:after_import) { |result| seen << [ result.dry_run?, result.stats[:written] ] }
       end)
       ApplicationImport.run(definition(handler: "DryHandler", output: { "model" => "DryRunUser" }), StringIO.new(content),
         filename: "u.csv", logger:, dry_run: true)
@@ -1225,16 +1239,16 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
       expect(seen).to eq([ [ true, 0 ] ])
     end
 
-    it "works without a model (raw output)" do
+    it "builds no records with raw output" do
       result = ApplicationImport.run(definition, StringIO.new("Email,Name\na@x.io,Ann\n"), filename: "u.csv", logger:, dry_run: true)
 
-      expect([ result.dry_run?, result.records ]).to eq([ true, [ ann ] ])
+      expect([ result.dry_run?, result.stats[:valid], result.records ]).to eq([ true, 1, [] ])
     end
 
     it "logs the summary as a dry run" do
       dry
 
-      expect(log.string).to include("finished users.csv (dry run, rolled back): completed_with_errors")
+      expect(log.string).to include("finished users.csv (dry run, nothing written): completed")
     end
 
     it "is off by default" do

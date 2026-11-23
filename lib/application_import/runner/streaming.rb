@@ -18,8 +18,11 @@ module ApplicationImport
                                    "(rows are written before verify)"
       end
 
-      # Called after each row is settled: queue it if kept, write a full batch.
+      # Called after each row is settled: queue it if kept, write a full batch. A dry run
+      # writes nothing: the row's record is released at once.
       def stream(row)
+        return row.release! if result.dry_run?
+
         pending = (@unwritten ||= [])
         pending << row unless row.skipped?
         return if pending.size < (definition.output[:batch_size] || Constants::DEFAULT_BATCH_SIZE)

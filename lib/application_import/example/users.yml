@@ -6,7 +6,7 @@
 # members.yml (exact headers, custom reader / checker / caster).
 #
 # Run: ApplicationImport.run(:users, file, context: { user_id: 1 }, dry_run: false)
-# (dry_run: every step, writes included, then rolled back).
+# (dry_run: every step up to the write, then stop: nothing written; stats valid = rows to write).
 #
 # Pipeline per data row: cast + column rules -> transformers -> mapper
 # -> handler.map_row -> handler.build_record -> row validators -> handler.validate_row
