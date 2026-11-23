@@ -12,6 +12,9 @@ RSpec.describe ApplicationImport::Errors do
       ApplicationImport::Errors::InvalidFileCheckerError => ApplicationImport::Errors::InvalidClassError,
       ApplicationImport::Errors::InvalidReaderError => ApplicationImport::Errors::InvalidClassError,
       ApplicationImport::Errors::InvalidCasterError => ApplicationImport::Errors::InvalidClassError,
+      ApplicationImport::Errors::InvalidTransformerError => ApplicationImport::Errors::InvalidClassError,
+      ApplicationImport::Errors::InvalidMapperError => ApplicationImport::Errors::InvalidClassError,
+      ApplicationImport::Errors::UnknownLineError => ApplicationImport::Errors::Error,
       ApplicationImport::Errors::InvalidValidatorError => ApplicationImport::Errors::InvalidClassError
     }.each do |error_class, parent|
       it "#{error_class.name.demodulize} inherits #{parent.name}" do
@@ -102,6 +105,8 @@ RSpec.describe ApplicationImport::Errors do
     ApplicationImport::Errors::InvalidFileCheckerError => [ :file_checker, "ApplicationImport::FileChecker" ],
     ApplicationImport::Errors::InvalidReaderError => [ :reader, "ApplicationImport::Readers::Base" ],
     ApplicationImport::Errors::InvalidCasterError => [ :caster, "ApplicationImport::Casters::Base" ],
+    ApplicationImport::Errors::InvalidTransformerError => [ :transformer, "ApplicationImport::Transformers::Base" ],
+    ApplicationImport::Errors::InvalidMapperError => [ :mapper, "ApplicationImport::Mappers::Base" ],
     ApplicationImport::Errors::InvalidValidatorError => [ :validator, "ApplicationImport::Validators::Base" ]
   }.each do |error_class, (keyword, base)|
     describe error_class do

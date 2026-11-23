@@ -21,6 +21,12 @@ RSpec.describe ApplicationImport::RecordBuilder do
     expect([ record.email, record.phone, record.admin ]).to eq([ "a@x.io", nil, false ])
   end
 
+  it "assigns generated keys the model can set, ignoring the others" do
+    record = described_class.build(RbUser, { email: "a@x.io", full_name: "Ann", nope: 1 }, columns, generated: %i[ full_name nope ])
+
+    expect([ record.email, record.full_name ]).to eq([ "a@x.io", "Ann" ])
+  end
+
   context "with assign_unknown" do
     it "assigns kept headers naming a model attribute, as read" do
       record = build({ :email => "a@x.io", "Phone" => " 090 ", "Full Name" => "Ann" }, assign_unknown: true)

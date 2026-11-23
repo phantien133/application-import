@@ -5,6 +5,7 @@ module ApplicationImport
   # Order (see Runner::Rows), streaming each data row:
   #   map_row -> build_record -> (row validators) -> validate_row
   #   -> (rows validators) -> validate_rows
+  # (transformers run before map_row, see Transformers::Base)
   # then once the whole file is read, on the kept rows: (verify validators) -> verify
   # -> write; after_import always runs last.
   #
@@ -31,11 +32,12 @@ module ApplicationImport
     # Attributes of kept unknown headers (String keys) are not assigned, so a file cannot
     # set arbitrary model attributes, unless file.unknown_headers is assign (see
     # RecordBuilder); otherwise use them in an override if needed.
-    def build_record(attributes, _row)
+    def build_record(attributes, row)
       model = definition.output[:model]
       return unless model
 
-      RecordBuilder.build(model, attributes, definition.columns, assign_unknown: definition.file[:unknown_headers] == :assign)
+      RecordBuilder.build(model, attributes, definition.columns, assign_unknown: definition.file[:unknown_headers] == :assign,
+        generated: row.generated_keys)
     end
 
     # Checks of one row on its own.
@@ -49,7 +51,8 @@ module ApplicationImport
 
     # Empty on purpose: the place for import-wide checks of your own (e.g. totals,
     # references between rows or to the database) before anything is written.
-    def verify(rows, result); end
+    # cache: the run's Hash filled by the rows checks (validate_rows, rows validators).
+    def verify(rows, result, cache); end
 
     # Writes the kept rows with the writer for output.mode; returns the written count.
     def write(rows, writer)

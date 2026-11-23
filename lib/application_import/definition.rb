@@ -1,6 +1,6 @@
 module ApplicationImport
   class Definition
-    attr_reader :name, :handler_class, :file, :columns, :validators, :output, :on_error
+    attr_reader :name, :handler_class, :file, :columns, :transformers, :mapper, :validators, :output, :on_error
 
     class << self
       def normalize_name(name)
@@ -43,15 +43,13 @@ module ApplicationImport
       end
     end
 
+    SECTIONS = %i[ file columns transformers mapper validators output on_error ].freeze
+
     def initialize(name, config)
       @name = self.class.normalize_name(name)
       parsed = Configs::DefinitionParser.new(@name, config).parse
       @handler_class = parsed[:handler]
-      @file = parsed[:file]
-      @columns = parsed[:columns]
-      @validators = parsed[:validators]
-      @output = parsed[:output]
-      @on_error = parsed[:on_error]
+      SECTIONS.each { |section| instance_variable_set(:"@#{section}", parsed[section]) }
       freeze
     end
 

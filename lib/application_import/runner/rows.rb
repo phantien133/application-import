@@ -4,7 +4,8 @@ module ApplicationImport
     #
     # process streams the reader; for each data row:
     #   build (header map) -> cast (types + column rules, one check for all columns)
-    #   -> map (handler.map_row, handler.build_record)
+    #   -> transformers (one check each, generated attributes merged)
+    #   -> map (mapper, handler.map_row, handler.build_record)
     #   -> row checks (row validators, handler.validate_row; each row on its own)
     #   -> rows checks (rows validators, handler.validate_rows; across rows, called per
     #      row in file order with the run's cache: a Hash, empty at start, shared by every
@@ -46,18 +47,38 @@ module ApplicationImport
 
       # The steps of one row, in order; each may report errors on the row.
       def row_checks(row)
-        [ -> { check_extra_cells(row) }, -> { cast_row(row) }, -> { map_row(row) }, *row_stage(row), *rows_stage(row) ]
+        [ -> { check_extra_cells(row) }, -> { cast_row(row) }, *transformer_checks(row), -> { map_row(row) },
+          *row_stage(row), *rows_stage(row) ]
       end
 
+      # mapper (if any) -> handler.map_row -> handler.build_record; errors raised by the
+      # mapper or the handler are attributed to them.
       def map_row(row)
-        row.attributes = handler.map_row(row.attributes, row)
-        row.record = handler.build_record(row.attributes, row)
+        guard((mapper || handler).class) do
+          apply_mapper(row) if mapper
+          row.attributes = handler.map_row(row.attributes, row)
+          row.record = handler.build_record(row.attributes, row)
+        end
       end
 
+      def apply_mapper(row)
+        mapped = mapper.call(row.attributes, row)
+        raise TypeError, "#{mapper.class.name}#call must return a Hash" unless mapped.is_a?(Hash)
+
+        row.attributes = mapped
+        row.generated_keys.concat(mapped.keys.grep(Symbol) - column_keys).uniq!
+      end
+
+      def column_keys
+        @column_keys ||= definition.columns.map(&:key)
+      end
+
+      # cache: the same Hash the rows checks filled, e.g. keys collected for one query.
+      # It may hold data of rows skipped later: filter by `rows` when it matters.
       def verify
         kept = rows
-        validators(:verify).each { |validator| guard { validator.call(kept, result) } }
-        guard { handler.verify(kept, result) }
+        validators(:verify).each { |validator| guard(validator.class) { validator.call(kept, result, cache) } }
+        guard(handler.class) { handler.verify(kept, result, cache) }
         settle_all
       end
 
@@ -77,24 +98,25 @@ module ApplicationImport
         @writer ||= Writers.for(definition, result:, logger:, on_failure: ->(row) { settle(row, halt: false) })
       end
 
-      # Turns raised row errors into errors on the rows they concern.
-      def guard(row = nil)
+      # Turns raised row errors into errors on the rows of their lines, in every stage.
+      # A line where no data row starts is a bug in the code that raised it:
+      # Errors::UnknownLineError (source = that class), never attached elsewhere.
+      def guard(source = nil)
         yield
       rescue Errors::RowError => e
-        target(e.line, row).add_error(code: e.code, message: e.message, column: e.column)
+        target(e.line, source).add_error(code: e.code, message: e.message, column: e.column)
       rescue Errors::RowsError => e
-        add_rows_error(e, row)
+        add_rows_error(e, source)
       end
 
-      def add_rows_error(error, row)
+      def add_rows_error(error, source)
         details = { lines: error.lines, columns: error.columns }
-        error.lines.each do |line|
-          target(line, row).add_error(code: error.code, message: error.message, column: error.columns.first, details:)
-        end
+        targets = error.lines.map { |line| target(line, source) }
+        targets.each { |row| row.add_error(code: error.code, message: error.message, column: error.columns.first, details:) }
       end
 
-      def target(line, row)
-        @rows_by_line[line] || row || raise(ArgumentError, "no row on line #{line}")
+      def target(line, source)
+        @rows_by_line[line] || raise(Errors::UnknownLineError.new(line:, source: source&.name))
       end
 
       # Settles the given row first, then any other row that got new errors.

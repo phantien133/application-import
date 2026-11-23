@@ -8,7 +8,7 @@ RSpec.describe ApplicationImport::Runner::Rows do
       define_method(:map_row) { |attributes, row| (log << [ :map_row, row.line ]) && attributes.merge(mapped: true) }
       define_method(:validate_row) { |row, _result| log << [ :validate_row, row.line ] }
       define_method(:validate_rows) { |row, _result, _cache| log << [ :validate_rows, row.line ] }
-      define_method(:verify) { |rows, _result| log << [ :verify, rows.map(&:line) ] }
+      define_method(:verify) { |rows, _result, _cache| log << [ :verify, rows.map(&:line) ] }
     end)
   end
 
@@ -197,6 +197,230 @@ RSpec.describe ApplicationImport::Runner::Rows do
     end
   end
 
+  describe "transformers" do
+    def content
+      "email,age\na@x.io,30\nb@x.io,old\n"
+    end
+
+    def config
+      { "columns" => { "email" => nil, "age" => { "type" => "integer" } }, "transformers" => transformers, "on_error" => "skip" }
+    end
+
+    def transformers
+      [ { "class" => "AgeNextYear" }, { "type" => "concat", "from" => %w[ email age_next ], "to" => "label" } ]
+    end
+
+    before do
+      log = events
+      stub_const("AgeNextYear", Class.new(ApplicationImport::Transformers::Base) do
+        define_method(:call) { |attributes, row| (log << [ :transform, row.line ]) && { age_next: attributes[:age] + 1 } }
+      end)
+    end
+
+    it "run in order after cast and before map_row, their results merged and kept as generated keys" do
+      runner = RowsSpecRunner.new(definition, ApplicationImport::Source.new(filename: "u.csv", io: StringIO.new(content)), logger: nil)
+      runner.call
+
+      row = runner.rows.first
+      expect([ row.attributes, row.generated_keys ]).to eq([
+        { email: "a@x.io", age: 30, age_next: 31, label: "a@x.io 31", mapped: true }, %i[ age_next label ]
+      ])
+      expect(events.first(2)).to eq([ [ :transform, 2 ], [ :map_row, 2 ] ])
+    end
+
+    it "do not run on a row whose cast failed (row_errors: first)" do
+      run
+
+      expect(events).not_to include([ :transform, 3 ])
+    end
+
+    it "report errors like other checks" do
+      stub_const("AgeNextYear", Class.new(ApplicationImport::Transformers::Base) do
+        define_method(:call) { |_attributes, row| raise ApplicationImport::Errors::RowError.new("nope", line: row.line, code: :bad) }
+      end)
+
+      expect(run.errors.map { |e| [ e.line, e.code ] }).to eq([ [ 2, :bad ], [ 3, :invalid_type ] ])
+    end
+
+    it "may return nil to change nothing" do
+      stub_const("AgeNextYear", Class.new(ApplicationImport::Transformers::Base) { define_method(:call) { |_attributes, _row| nil } })
+      runner = RowsSpecRunner.new(definition, ApplicationImport::Source.new(filename: "u.csv", io: StringIO.new(content)), logger: nil)
+      runner.call
+
+      expect(runner.rows.first.attributes).to eq(email: "a@x.io", age: 30, label: "a@x.io", mapped: true)
+    end
+
+    it "see the attributes produced by the transformers before them" do
+      seen = []
+      stub_const("Spy", Class.new(ApplicationImport::Transformers::Base) { define_method(:call) { |attributes, _row| (seen << attributes.keys) && nil } })
+      allow(self).to receive(:transformers).and_return(transformers + [ { "class" => "Spy" } ])
+
+      run
+
+      expect(seen.first).to include(:age_next, :label)
+    end
+
+    it "all run and collect their errors with row_errors: all" do
+      stub_const("AgeNextYear", Class.new(ApplicationImport::Transformers::Base) do
+        define_method(:call) { |_attributes, row| row.add_error(code: :one, message: "1") && nil }
+      end)
+      stub_const("Second", Class.new(ApplicationImport::Transformers::Base) do
+        define_method(:call) { |_attributes, row| row.add_error(code: :two, message: "2") && nil }
+      end)
+      allow(self).to receive(:config).and_return(config.merge("transformers" => [ { "class" => "AgeNextYear" }, { "class" => "Second" } ],
+        "on_error" => { "default" => "skip", "row_errors" => "all" }))
+
+      expect(run.errors.select { |e| e.line == 2 }.map(&:code)).to eq(%i[ one two ])
+    end
+
+    it "must return a Hash or nil" do
+      stub_const("AgeNextYear", Class.new(ApplicationImport::Transformers::Base) { define_method(:call) { |_attributes, _row| [ 1 ] } })
+
+      expect { run }.to raise_error(TypeError, "AgeNextYear#call must return a Hash or nil")
+    end
+
+    context "with output.model" do
+      def config
+        super.merge("output" => { "model" => "RowsSpecUser" }, "transformers" => [ { "type" => "concat", "from" => [ "email" ], "to" => "label" } ])
+      end
+
+      before do
+        ActiveRecord::Base.connection.create_table(:rows_spec_users, temporary: true) do |t|
+          t.string :email
+          t.string :label
+        end
+        stub_const("RowsSpecUser", Class.new(ApplicationRecord) { self.table_name = "rows_spec_users" })
+      end
+
+      it "assigns generated keys the model can set to the record" do
+        runner = RowsSpecRunner.new(definition, ApplicationImport::Source.new(filename: "u.csv", io: StringIO.new(content)), logger: nil)
+        runner.call
+
+        expect(runner.rows.map { |row| [ row.record.email, row.record.label ] }).to eq([ [ "a@x.io", "a@x.io" ] ])
+      end
+    end
+  end
+
+  describe "mapper" do
+    def config
+      { "columns" => { "email" => nil, "name" => nil }, "transformers" => [ { "type" => "concat", "from" => %w[ name ], "to" => "label" } ],
+        "mapper" => mapper, "on_error" => "skip" }
+    end
+
+    def content
+      "email,name\na@x.io,Ann\n"
+    end
+
+    def mapper
+      { "type" => "rename", "attributes" => { "email" => "user_email", "label" => "title" } }
+    end
+
+    def mapped_rows
+      runner = RowsSpecRunner.new(definition, ApplicationImport::Source.new(filename: "u.csv", io: StringIO.new(content)), logger: nil)
+      runner.call
+      runner.rows
+    end
+
+    it "runs after the transformers and before handler.map_row, its keys not declared kept as generated" do
+      row = mapped_rows.first
+
+      expect([ row.attributes, row.generated_keys ]).to eq([ { name: "Ann", user_email: "a@x.io", title: "Ann", mapped: true },
+        %i[ label user_email title ] ])
+    end
+
+    it "lets validators see the mapped attributes" do
+      seen = []
+      stub_const("SeeMapped", validator(:row) { |row, _result| seen << row.attributes.keys })
+      allow(self).to receive(:config).and_return(config.merge("validators" => { "row" => [ { "class" => "SeeMapped" } ] }))
+
+      run
+
+      expect(seen.first).to include(:user_email, :title)
+    end
+
+    context "with a custom mapper" do
+      def mapper
+        { "class" => "NestMapper", "key" => "profile" }
+      end
+
+      before do
+        stub_const("NestMapper", Class.new(ApplicationImport::Mappers::Base) do
+          define_method(:call) do |attributes, row|
+            raise ApplicationImport::Errors::RowError.new("no name", line: row.line, code: :no_name) if attributes[:name].nil?
+
+            { :email => attributes[:email], options[:key].to_sym => { name: attributes[:name] } }
+          end
+        end)
+      end
+
+      it "replaces the attributes with its Hash" do
+        expect(mapped_rows.first.attributes).to eq(email: "a@x.io", profile: { name: "Ann" }, mapped: true)
+      end
+
+      it "reports raised row errors like other checks" do
+        allow(self).to receive(:content).and_return("email,name\na@x.io,\n")
+
+        expect(run.errors.map { |e| [ e.line, e.code ] }).to eq([ [ 2, :no_name ] ])
+      end
+
+      it "gets its options, the run's context and logger" do
+        seen = []
+        NestMapper.define_method(:call) { |attributes, _row| (seen << [ options, context ]) && attributes }
+        RowsSpecRunner.new(definition, ApplicationImport::Source.new(filename: "u.csv", io: StringIO.new(content)),
+          context: { user_id: 3 }, logger: nil).call
+
+        expect(seen).to eq([ [ { key: "profile" }, { user_id: 3 } ] ])
+      end
+
+      it "is not run for a row stopped earlier (row_errors: first)" do
+        calls = []
+        NestMapper.define_method(:call) { |attributes, row| (calls << row.line) && attributes }
+        allow(self).to receive_messages(config: config.merge("columns" => { "email" => nil, "name" => { "required" => true } }),
+          content: "email,name\na@x.io,\nb@x.io,Bob\n")
+
+        run
+
+        expect(calls).to eq([ 3 ])
+      end
+
+      it "must return a Hash" do
+        NestMapper.define_method(:call) { |_attributes, _row| nil }
+
+        expect { run }.to raise_error(TypeError, "NestMapper#call must return a Hash")
+      end
+    end
+  end
+
+  describe "unknown lines" do
+    it "raise UnknownLineError in the row stage too, instead of using the current row" do
+      stub_const("OffByOne", validator(:row) { |row, _result| raise ApplicationImport::Errors::RowError.new("x", line: row.line - 1) })
+      allow(self).to receive(:config).and_return("validators" => { "row" => [ { "class" => "OffByOne" } ] })
+
+      expect { run }.to raise_error(ApplicationImport::Errors::UnknownLineError, /line 1 \(raised by OffByOne\)/)
+    end
+
+    it "raise for any unknown line of a RowsError, before adding errors" do
+      stub_const("PairCheck", validator(:rows) do |row, _result, _cache|
+        raise ApplicationImport::Errors::RowsError.new("pair", lines: [ row.line, 42 ]) if row.line == 3
+      end)
+      allow(self).to receive(:config).and_return("validators" => { "rows" => [ { "class" => "PairCheck" } ] })
+
+      expect { run }.to raise_error(ApplicationImport::Errors::UnknownLineError, /line 42 \(raised by PairCheck\)/)
+    end
+
+    it "accept lines of skipped rows" do
+      stub_const("FirstBad", validator(:row) { |row, _result| row.add_error(code: :bad, message: "bad") if row.line == 2 })
+      stub_const("FlagFirst", validator(:verify) do |_rows, _result, _cache|
+        raise ApplicationImport::Errors::RowError.new("again", line: 2, code: :again)
+      end)
+      allow(self).to receive(:config).and_return(
+        "validators" => { "row" => [ { "class" => "FirstBad" } ], "verify" => [ { "class" => "FlagFirst" } ] }, "on_error" => "skip"
+      )
+
+      expect(run.errors.map { |e| [ e.line, e.code ] }).to eq([ [ 2, :bad ], [ 2, :again ] ])
+    end
+  end
+
   describe "on_error.row_errors" do
     before do
       stub_const("FirstCheck", validator(:row) { |row, _result| row.add_error(code: :one, message: "1").add_error(code: :two, message: "2") })
@@ -341,7 +565,7 @@ RSpec.describe ApplicationImport::Runner::Rows do
     end
 
     it "runs once on the kept rows and can drop rows by line" do
-      stub_const("TotalValidator", validator(:verify) do |rows, _result|
+      stub_const("TotalValidator", validator(:verify) do |rows, _result, _cache|
         raise ApplicationImport::Errors::RowError.new("last", line: rows.last.line, code: :late)
       end)
 
@@ -351,10 +575,25 @@ RSpec.describe ApplicationImport::Runner::Rows do
       expect(events).to include([ :write_rows, [ 2 ] ])
     end
 
-    it "records errors on unknown lines as an ArgumentError" do
-      stub_const("TotalValidator", validator(:verify) { |_rows, _result| raise ApplicationImport::Errors::RowError.new("x", line: 99) })
+    it "raises UnknownLineError for a line where no data row starts" do
+      stub_const("TotalValidator", validator(:verify) { |_rows, _result, _cache| raise ApplicationImport::Errors::RowError.new("x", line: 99) })
 
-      expect { run }.to raise_error(ArgumentError, "no row on line 99")
+      expect { run }.to raise_error(ApplicationImport::Errors::UnknownLineError,
+        "no data row starts on line 99 (raised by TotalValidator); use row.line") { |e| expect([ e.line, e.source ]).to eq([ 99, "TotalValidator" ]) }
+    end
+
+    it "gets the cache filled by the rows checks" do
+      stub_const("CollectValidator", validator(:rows) { |row, _result, cache| (cache[:emails] ||= []) << row.attributes[:email] })
+      seen = []
+      stub_const("TotalValidator", validator(:verify) { |_rows, _result, cache| seen << cache[:emails] })
+      RowsSpecHandler.define_method(:verify) { |_rows, _result, cache| seen << cache[:emails].size }
+      allow(self).to receive(:config).and_return(
+        "validators" => { "rows" => [ { "class" => "CollectValidator" } ], "verify" => [ { "class" => "TotalValidator" } ] }
+      )
+
+      run
+
+      expect(seen).to eq([ %w[ a@x.io b@x.io ], 2 ])
     end
   end
 

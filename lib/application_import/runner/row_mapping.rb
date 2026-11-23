@@ -1,7 +1,7 @@
 module ApplicationImport
   class Runner
-    # First checks of each row in Runner::Rows: cells beyond the headers
-    # (file.extra_cells) and casting + column rules.
+    # Row checks of Runner::Rows: cells beyond the headers (file.extra_cells), casting +
+    # column rules, transformers, and the row / rows stage checks.
     module RowMapping
       private
 
@@ -60,13 +60,13 @@ module ApplicationImport
       end
 
       def row_stage(row)
-        checks = validators(:row).map { |validator| -> { guard(row) { validator.call(row, result) } } }
-        checks << -> { guard(row) { handler.validate_row(row, result) } }
+        checks = validators(:row).map { |validator| check(validator) { validator.call(row, result) } }
+        checks << check(handler) { handler.validate_row(row, result) }
       end
 
       def rows_stage(row)
-        checks = validators(:rows).map { |validator| -> { guard(row) { validator.call(row, result, cache) } } }
-        checks << -> { guard(row) { handler.validate_rows(row, result, cache) } }
+        checks = validators(:rows).map { |validator| check(validator) { validator.call(row, result, cache) } }
+        checks << check(handler) { handler.validate_rows(row, result, cache) }
       end
 
       # A custom reader that never calls on_headers gets its headers mapped at the first row.
@@ -75,6 +75,26 @@ module ApplicationImport
         result.increment(:total)
         row = Row.new(line: raw.line, attributes: @header_map.attributes(raw.values), raw: raw.values)
         @rows_by_line[row.line] = row
+      end
+
+      # One check per transformer: its Hash is merged into the row's attributes; Symbol
+      # keys are remembered so the record builder assigns them.
+      def transformer_checks(row)
+        transformers.map { |transformer| check(transformer) { transform(row, transformer) } }
+      end
+
+      # A row check running the block under guard, raised errors attributed to source.
+      def check(source, &block)
+        -> { guard(source.class, &block) }
+      end
+
+      def transform(row, transformer)
+        generated = transformer.call(row.attributes, row)
+        return if generated.nil?
+        raise TypeError, "#{transformer.class.name}#call must return a Hash or nil" unless generated.is_a?(Hash)
+
+        row.attributes = row.attributes.merge(generated)
+        row.generated_keys.concat(generated.keys.grep(Symbol)).uniq!
       end
     end
   end

@@ -4,7 +4,7 @@ module ApplicationImport
       include Checks
       include Constants
 
-      ROOT_KEYS = %w[ handler file columns validators output on_error ].freeze
+      ROOT_KEYS = %w[ handler file columns transformers mapper validators output on_error ].freeze
 
       def initialize(name, config)
         @name = name
@@ -25,12 +25,12 @@ module ApplicationImport
       private
 
       def parse_sections
-        columns = ColumnParser.new(@config["columns"], @errors).parse
-        @column_keys = columns.map(&:key)
         {
           handler: class_name(@config["handler"], "handler"),
           file: FileParser.new(@config["file"], @errors).parse,
-          columns:,
+          columns: parse_columns,
+          transformers: parse_transformers,
+          mapper: MapperParser.new(@config["mapper"], @errors).parse,
           validators: parse_validators,
           output: OutputParser.new(@config["output"], @column_keys, @errors).parse,
           on_error: OnErrorParser.new(@config["on_error"], @errors).parse
@@ -41,6 +41,14 @@ module ApplicationImport
         return unless parsed[:file][:unknown_headers] == :assign && parsed[:output][:model].nil?
 
         add_error("file.unknown_headers", "assign needs output.model")
+      end
+
+      def parse_columns
+        ColumnParser.new(@config["columns"], @errors).parse.tap { |columns| @column_keys = columns.map(&:key) }
+      end
+
+      def parse_transformers
+        TransformerParser.new(@config["transformers"], @errors).parse
       end
 
       def parse_validators
@@ -57,6 +65,8 @@ module ApplicationImport
       def resolve_references(parsed)
         parsed[:output][:model] = ClassResolver.resolve!(parsed[:output][:model], base: "ActiveRecord::Base")
         resolve_casters(parsed[:columns])
+        TransformerParser.resolve!(parsed[:transformers])
+        MapperParser.resolve!(parsed[:mapper])
         ValidatorParser.resolve!(parsed[:validators], output_model: parsed[:output][:model], name: @name)
       end
 

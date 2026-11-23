@@ -1,22 +1,23 @@
 module ApplicationImport
   # Builds a new model record from row attributes.
-  # Declared columns: assigned when the model can set them (setter), after casting.
+  # Declared columns and transformer-generated keys: assigned when the model can set
+  # them (setter).
   # Kept unknown headers (String keys): never assigned, unless assign_unknown (file.
   # unknown_headers: assign); then those naming a model attribute (header downcased,
   # spaces -> _, not the primary key nor a declared column) are assigned as read.
   module RecordBuilder
     module_function
 
-    def build(model, attributes, columns, assign_unknown: false)
+    # generated: Symbol keys produced by transformers, assigned like declared columns.
+    def build(model, attributes, columns, assign_unknown: false, generated: [])
       record = model.new
       record.assign_attributes(unknown(model, attributes, columns)) if assign_unknown
-      record.assign_attributes(assignable(record, attributes, columns))
+      record.assign_attributes(assignable(record, attributes, columns.map(&:key) | generated))
       record
     end
 
-    def assignable(record, attributes, columns)
-      columns.each_with_object({}) do |column, assignable|
-        key = column.key
+    def assignable(record, attributes, keys)
+      keys.each_with_object({}) do |key, assignable|
         assignable[key] = attributes[key] if attributes.key?(key) && record.respond_to?("#{key}=")
       end
     end

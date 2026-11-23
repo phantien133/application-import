@@ -574,6 +574,101 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
     end
   end
 
+  describe "transformers" do
+    def with(transformers, content = "Email,Name\n A@X.IO ,Ann\n", **config)
+      outcome(content, transformers:, **config)
+    end
+
+    it "runs none when absent, empty or null" do
+      expect([ outcome, with([], "Email,Name\na@x.io,Ann\n"), with(nil, "Email,Name\na@x.io,Ann\n") ]).to all(eq(ok(ann)))
+    end
+
+    it "runs built-in transformers in order" do
+      transformers = [
+        { "type" => "normalize", "attributes" => [ "email" ], "with" => %w[ strip downcase ] },
+        { "type" => "default", "attribute" => "role", "value" => "member" },
+        { "type" => "map", "attribute" => "name", "values" => { "Ann" => "Annabelle" } },
+        { "type" => "concat", "from" => %w[ name email ], "to" => "label", "separator" => " <" },
+        { "type" => "context", "key" => "user_id", "to" => "created_by_id" }
+      ]
+      result = ApplicationImport.run(definition(transformers:), StringIO.new("Email,Name\n A@X.IO ,Ann\n"), filename: "users.csv",
+        runner: "ConfigSpecRunner", logger:, context: { user_id: 9 })
+
+      expect(result.records).to eq([
+        { email: "a@x.io", name: "Annabelle", role: "member", label: "Annabelle <a@x.io", created_by_id: 9 }
+      ])
+    end
+
+    it "runs custom transformer classes with their options" do
+      stub_const("Initials", Class.new(ApplicationImport::Transformers::Base) do
+        define_method(:call) { |attributes, _row| { initials: attributes[:name][0, options[:size]].upcase } }
+      end)
+
+      expect(with([ { "class" => "Initials", "size" => 2 } ]).last).to eq([ { email: " A@X.IO ", name: "Ann", initials: "AN" } ])
+    end
+
+    it "turns map strict misses into not_mapped row errors" do
+      transformers = [ { "type" => "map", "attribute" => "name", "values" => { "Bob" => "B" }, "strict" => true } ]
+
+      expect(with(transformers, on_error: "skip").first(2)).to eq([ :completed_with_errors, %i[ not_mapped ] ])
+    end
+
+    it "rejects invalid transformer settings" do
+      expect([ config_error(transformers: { "type" => "concat" }), config_error(transformers: [ { "type" => "upper" } ]),
+        config_error(transformers: [ { "class" => "String" } ]) ])
+        .to eq([ "users: transformers must be a list", "users: transformers[0].type must be one of concat, default, map, normalize, context",
+          "String must inherit from ApplicationImport::Transformers::Base" ])
+    end
+  end
+
+  describe "mapper" do
+    before do
+      ActiveRecord::Base.connection.create_table(:mapper_spec_users, temporary: true) do |t|
+        t.string :user_email
+        t.string :full_name
+      end
+      stub_const("MapperSpecUser", Class.new(ApplicationRecord) { self.table_name = "mapper_spec_users" })
+    end
+
+    def records(mapper)
+      captured = []
+      stub_const("RecordRunner", Class.new(ApplicationImport::Runner) { define_method(:write_rows) { captured.concat(rows) } })
+      ApplicationImport.run(definition(mapper:, output: { "model" => "MapperSpecUser" }), StringIO.new("Email,Name\na@x.io,Ann\n"),
+        filename: "users.csv", runner: "RecordRunner", logger:)
+      captured
+    end
+
+    it "is optional" do
+      expect(outcome).to eq(ok(ann))
+    end
+
+    it "renames attributes so the record gets them" do
+      row = records({ "type" => "rename", "attributes" => { "email" => "user_email", "name" => "full_name" } }).first
+
+      expect([ row.attributes, row.record.user_email, row.record.full_name ])
+        .to eq([ { user_email: "a@x.io", full_name: "Ann" }, "a@x.io", "Ann" ])
+    end
+
+    it "keeps only renamed attributes with only" do
+      row = records({ "type" => "rename", "attributes" => { "email" => "user_email" }, "only" => true }).first
+
+      expect(row.attributes).to eq(user_email: "a@x.io")
+    end
+
+    it "runs a custom mapper class" do
+      stub_const("UpcaseMapper", Class.new(ApplicationImport::Mappers::Base) do
+        define_method(:call) { |attributes, _row| { user_email: attributes[:email].upcase } }
+      end)
+
+      expect(records({ "class" => "UpcaseMapper" }).first.record.user_email).to eq("A@X.IO")
+    end
+
+    it "rejects invalid settings" do
+      expect([ config_error(mapper: { "type" => "split" }), config_error(mapper: { "class" => "String" }) ])
+        .to eq([ "users: mapper.type must be one of rename", "String must inherit from ApplicationImport::Mappers::Base" ])
+    end
+  end
+
   describe "validators" do
     it "runs with no validators section, an empty one, or a null one" do
       expect([ outcome, outcome(validators: {}), outcome(validators: nil) ]).to all(eq(ok(ann)))

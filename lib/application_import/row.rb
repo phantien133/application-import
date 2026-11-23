@@ -4,7 +4,7 @@ module ApplicationImport
   # validates. Errors are collected on the row; the Runner records the new ones in the
   # result and applies on_error (take_new_errors).
   class Row
-    attr_reader :line, :raw, :errors
+    attr_reader :line, :raw, :errors, :generated_keys
     attr_accessor :attributes, :record
 
     def initialize(line:, attributes:, raw:, record: nil)
@@ -13,6 +13,7 @@ module ApplicationImport
       @raw = raw
       @record = record
       @errors = []
+      @generated_keys = []
       @recorded = 0
       @skipped = false
     end
@@ -43,7 +44,7 @@ module ApplicationImport
     end
 
     def to_h
-      { line:, attributes:, raw:, record:, errors:, skipped: skipped? }
+      { line:, attributes:, raw:, record:, errors:, generated_keys:, skipped: skipped? }
     end
 
     def ==(other)

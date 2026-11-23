@@ -8,7 +8,7 @@ module ApplicationImport
     #   FileValidator#call(source, result)        add file errors to the result
     #   RowValidator#call(row, result)            one row on its own
     #   RowsValidator#call(row, result, cache)    each row in file order, across rows
-    #   VerifyValidator#call(rows, result)        once on the kept rows
+    #   VerifyValidator#call(rows, result, cache) once on the kept rows (cache of the rows checks)
     # Report with row.add_error(code:, message:, column:) or by raising
     # Errors::RowError / Errors::RowsError.
     class Base

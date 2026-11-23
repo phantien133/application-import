@@ -93,7 +93,7 @@ RSpec.describe ApplicationImport::Handler do
     handler.validate_file(Object.new, result)
     handler.validate_row(rows.first, result)
     handler.validate_rows(rows.first, result, {})
-    handler.verify(rows, result)
+    handler.verify(rows, result, {})
     handler.after_import(result)
 
     expect([ result.errors, rows.first.errors ]).to eq([ [], [] ])

@@ -116,6 +116,15 @@ module ApplicationImport
       validators(stage).each { |validator| validator.call(subject, result) }
     end
 
+    def mapper
+      spec = definition.mapper
+      @mapper ||= spec && spec[:class].new(definition, spec[:options], context:, logger:)
+    end
+
+    def transformers
+      @transformers ||= definition.transformers.map { |spec| spec[:class].new(definition, spec[:options], context:, logger:) }
+    end
+
     def validators(stage)
       @validators ||= definition.validators.transform_values do |specs|
         specs.map { |spec| spec[:class].new(definition, spec[:options], context:, logger:) }

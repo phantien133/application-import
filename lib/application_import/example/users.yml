@@ -79,6 +79,39 @@ columns:
     # no date_format: ISO 8601, else lenient Time.zone.parse (needs year, month, day)
     # with a warning once per run — set date_format to parse exactly
 
+# --- Transformers ---------------------------------------------------------------
+# Run for each row after cast + column rules, in order, each returning attributes to
+# merge. Built-in `type` (concat, default, map, normalize, context) or your `class`
+# (< ApplicationImport::Transformers::Base, call(attributes, row) -> Hash).
+transformers:
+  - type: normalize
+    attributes: [ email ]
+    with: [ strip, downcase ]
+  - type: default
+    attribute: role
+    value: member
+  - type: map
+    attribute: role
+    values: { "Quản trị": admin, "Thành viên": member }
+  - type: concat
+    from: [ name, email ]
+    to: label
+    separator: " - "
+  - type: context
+    key: user_id
+    to: created_by_id
+  # - class: Imports::Users::SlugTransformer
+  #   source: name
+
+# --- Mapper -----------------------------------------------------------------------
+# One mapper, after the transformers, before handler.map_row and the validators:
+# turns the attributes into the ones the record gets. `type: rename` or your `class`
+# (< ApplicationImport::Mappers::Base, call(attributes, row) -> Hash).
+mapper:
+  type: rename
+  attributes: { joined_on: created_on }
+  # only: true    # keep only the renamed attributes
+
 # --- Validators ----------------------------------------------------------------
 # Run after the per-column checks. Either `type` (registered validator) or
 # `class` (any class answering .call or

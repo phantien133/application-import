@@ -26,6 +26,8 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
       handler: ApplicationImport::Handler,
       file: { checker: ApplicationImport::FileChecker, formats: nil, name_pattern: nil, max_size: nil,
               format: :csv, reader: nil, encoding: "UTF-8", headers: true, require_all_headers: false, unknown_headers: :skip, extra_cells: :warn, csv: {}, xlsx: {} },
+      transformers: [],
+      mapper: nil,
       validators: { file: [], row: [], rows: [], verify: [] },
       output: { mode: :raw, model: nil, batch_size: 1000, transaction: true, upsert: nil, import: {}, save: {} },
       on_error: ApplicationImport::ErrorPolicy.new
