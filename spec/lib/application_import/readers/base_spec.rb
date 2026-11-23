@@ -157,4 +157,18 @@ RSpec.describe ApplicationImport::Readers::Base do
       end
     end
   end
+
+  describe "#open / #close" do
+    it "are no-ops returning the reader by default" do
+      expect([ reader.open, reader.close ]).to eq([ reader, reader ])
+    end
+
+    it "do not affect reading" do
+      reader.open
+      rows = reader.to_a
+      reader.close
+
+      expect(rows.map(&:line)).to eq([ 2 ])
+    end
+  end
 end

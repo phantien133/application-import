@@ -24,6 +24,7 @@ module ApplicationImport
       catch(HALT) { run_steps }
       result
     ensure
+      close_reader
       handler.after_import(result)
     end
 
@@ -31,6 +32,7 @@ module ApplicationImport
 
     def run_steps
       step { validate_file }
+      step { open_reader }
       step { read_file }
       step { process }
     end
@@ -63,6 +65,23 @@ module ApplicationImport
 
     def file_checker
       definition.file_checker_class.new(definition, logger:)
+    end
+
+    # The reader may hold the file open from here until close_reader (after process).
+    def open_reader
+      reader.open
+      @reader_open = true
+    end
+
+    # Runs after process, whatever happened; a failure to close is logged, not raised,
+    # so it never hides the import's own result or exception.
+    def close_reader
+      return unless @reader_open
+
+      @reader_open = false
+      reader.close
+    rescue => e
+      error("closing the reader failed: #{e.class}: #{e.message}")
     end
 
     # Streams the data rows through the reader (encoding gate, headers) and

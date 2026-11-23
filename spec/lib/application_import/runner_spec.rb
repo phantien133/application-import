@@ -408,4 +408,94 @@ RSpec.describe ApplicationImport::Runner do
 
     expect { plain.call }.to raise_error(NotImplementedError, "ApplicationImport::Runner#process")
   end
+
+  describe "reader lifecycle" do
+    let(:definition) do
+      ApplicationImport::Definition.new(:users, {
+        "handler" => "ImportTestHandler", "file" => { "checker" => "ImportTestFileChecker", "reader" => "TrackingReader" },
+        "columns" => { "email" => nil }
+      })
+    end
+    let(:processor) do
+      log = events
+      -> { log << :process }
+    end
+
+    before do
+      log = events
+      stub_const("TrackingReader", Class.new(ApplicationImport::Readers::Csv) do
+        define_method(:open) { (log << :open) && self }
+        define_method(:close) { (log << :close) && self }
+        define_method(:each) { |&block| (log << :read) && super(&block) }
+      end)
+      ImportTestHandler.define_method(:after_import) { |_result| log << :after_import }
+    end
+
+    def events
+      @events ||= []
+    end
+
+    def stub_read_file?
+      false
+    end
+
+    it "opens after validate_file, reads, processes, then closes before after_import" do
+      log = events
+      ImportTestHandler.define_method(:validate_file) { |_source, _result| log << :validate_file }
+
+      runner.call
+
+      expect(events).to eq(%i[ validate_file open read process close after_import ])
+    end
+
+    context "when process raises" do
+      let(:processor) { -> { raise "boom" } }
+
+      it "still closes the reader" do
+        expect { runner.call }.to raise_error("boom")
+        expect(events).to eq(%i[ open read close after_import ])
+      end
+    end
+
+    context "when reading halts on a file error" do
+      def content
+        "email\n\xFF\n".b
+      end
+
+      it "still closes the reader" do
+        expect(runner.call.status).to eq(:failed)
+        expect(events).to eq(%i[ open read close after_import ])
+      end
+    end
+
+    context "when validate_file halts" do
+      let(:file_validation) { ->(_source, result) { result.add_file_error(:invalid_name, "bad") } }
+
+      it "neither opens nor closes the reader" do
+        runner.call
+
+        expect(events).to eq(%i[ after_import ])
+      end
+    end
+
+    context "when open raises a FileError" do
+      it "halts with it and does not close" do
+        TrackingReader.define_method(:open) { raise ApplicationImport::Errors::FileError.new("corrupt", code: :unreadable) }
+
+        expect(runner.call.errors.map(&:code)).to eq([ :unreadable ])
+        expect(events).to eq(%i[ after_import ])
+      end
+    end
+
+    context "when close raises" do
+      it "logs the failure without hiding the result" do
+        TrackingReader.define_method(:close) { raise IOError, "already closed" }
+        log = StringIO.new
+        runner.instance_variable_set(:@logger, ActiveSupport::Logger.new(log))
+
+        expect(runner.call.status).to eq(:completed)
+        expect(log.string).to include("closing the reader failed: IOError: already closed")
+      end
+    end
+  end
 end

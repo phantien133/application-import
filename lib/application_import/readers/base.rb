@@ -34,6 +34,18 @@ module ApplicationImport
         headers? ? @headers : definition.columns.map(&:header)
       end
 
+      # Lifecycle hooks for readers that hold a resource across #each (e.g. an XLSX
+      # workbook). The Runner calls #open after the file checks, before reading, and
+      # #close once the import is done (after process, also on failure). No-ops by
+      # default: the CSV reader opens and closes its files within #each.
+      def open
+        self
+      end
+
+      def close
+        self
+      end
+
       def on_headers(&block)
         @on_headers = block
         self

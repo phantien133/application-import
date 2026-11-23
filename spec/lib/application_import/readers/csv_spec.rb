@@ -400,4 +400,11 @@ RSpec.describe ApplicationImport::Readers::Csv do
 
     expect(definition.file[:csv]).to be_frozen
   end
+
+  describe "#open / #close" do
+    it "keep nothing open: files are opened and closed within each" do
+      expect([ reader.open, reader.close ]).to eq([ reader, reader ])
+      expect(rows).to eq([ [ 2, [ "a@example.com", "Ann" ] ], [ 3, [ "b@example.com", "Bob" ] ] ])
+    end
+  end
 end
