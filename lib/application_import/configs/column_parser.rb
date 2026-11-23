@@ -107,7 +107,7 @@ module ApplicationImport
       end
 
       def check_duplicate_headers(columns)
-        columns.flat_map(&:headers).group_by { |header| header.downcase }.each do |header, list|
+        columns.flat_map(&:headers).group_by { |header| HeaderMapper.normalize(header) }.each do |header, list|
           add_error("columns", "header \"#{header}\" is used more than once") if list.size > 1
         end
       end

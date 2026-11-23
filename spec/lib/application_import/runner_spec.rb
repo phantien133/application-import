@@ -270,8 +270,8 @@ RSpec.describe ApplicationImport::Runner do
 
       expect([ result.status, result.stats[:total], runner.reader.class ]).to eq([ :completed, 2, ApplicationImport::Readers::Csv ])
       expect(runner.rows).to eq([
-        ApplicationImport::Readers::RawRow.new(line: 2, values: [ "a@example.com" ]),
-        ApplicationImport::Readers::RawRow.new(line: 3, values: [ "b@example.com" ])
+        ApplicationImport::Row.new(line: 2, attributes: { email: "a@example.com" }, raw: [ "a@example.com" ]),
+        ApplicationImport::Row.new(line: 3, attributes: { email: "b@example.com" }, raw: [ "b@example.com" ])
       ])
       expect(seen).to eq([ :validate_file, [ :process, [ 2, 3 ] ] ])
     end
@@ -310,6 +310,55 @@ RSpec.describe ApplicationImport::Runner do
       end
     end
 
+    context "when a required header is missing" do
+      def content
+        "name\nAnn\n"
+      end
+
+      let(:definition) do
+        ApplicationImport::Definition.new(:users, {
+          "handler" => "ImportTestHandler", "file" => { "checker" => "ImportTestFileChecker" },
+          "columns" => { "email" => { "required" => true }, "name" => nil }
+        })
+      end
+      let(:processor) { -> { raise "process must not run" } }
+
+      it "halts with missing_headers before reading rows" do
+        result = runner.call
+
+        expect([ result.status, result.errors.map(&:code), runner.rows ]).to eq([ :failed, [ :missing_headers ], [] ])
+        expect(runner.handler.calls.last).to eq([ :after_import, result ])
+      end
+
+      context "with a header row only" do
+        def content
+          "name\n"
+        end
+
+        it "reports the header problem rather than the empty file" do
+          expect(runner.call.errors.map(&:code)).to eq([ :missing_headers ])
+        end
+      end
+    end
+
+    context "with unknown headers kept" do
+      def content
+        "Email,Phone\na@example.com,123\n"
+      end
+
+      let(:definition) do
+        ApplicationImport::Definition.new(:users, {
+          "file" => { "checker" => "ImportTestFileChecker", "unknown_headers" => "keep" }, "columns" => { "email" => nil }
+        })
+      end
+
+      it "passes them through in the row attributes" do
+        runner.call
+
+        expect(runner.rows.map(&:attributes)).to eq([ { :email => "a@example.com", "Phone" => "123" } ])
+      end
+    end
+
     it "uses a custom reader from the definition" do
       stub_const("UpcaseReader", Class.new(ApplicationImport::Readers::Csv) do
         private
@@ -325,7 +374,7 @@ RSpec.describe ApplicationImport::Runner do
 
       runner.call
 
-      expect(runner.rows.map(&:values)).to eq([ [ "A@EXAMPLE.COM" ], [ "B@EXAMPLE.COM" ] ])
+      expect(runner.rows.map(&:raw)).to eq([ [ "A@EXAMPLE.COM" ], [ "B@EXAMPLE.COM" ] ])
     end
   end
 

@@ -25,7 +25,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     expect(result.except(:columns)).to eq(
       handler: ApplicationImport::Handler,
       file: { checker: ApplicationImport::FileChecker, formats: nil, name_pattern: nil, max_size: nil, max_rows: 100_000,
-              format: :csv, reader: nil, encoding: "UTF-8", headers: true, csv: {}, xlsx: {} },
+              format: :csv, reader: nil, encoding: "UTF-8", headers: true, unknown_headers: :skip, csv: {}, xlsx: {} },
       validators: { file: [], row: [], rows: [], verify: [] },
       output: { mode: :raw, model: nil, batch_size: 1000, upsert: nil },
       on_error: ApplicationImport::ErrorPolicy.new
@@ -50,16 +50,20 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
 
   it "parses file options" do
     file = parse({ "file" => { "formats" => [ "csv", "xlsx", "csv" ], "name_pattern" => '\Ausers\.csv\z', "max_size" => 1,
-                               "max_rows" => 2, "format" => "xlsx", "encoding" => "shift_jis", "headers" => false, "csv" => { "col_sep" => ";" },
+                               "max_rows" => 2, "format" => "xlsx", "encoding" => "shift_jis", "headers" => false, "unknown_headers" => "keep", "csv" => { "col_sep" => ";" },
                                "xlsx" => { "sheet" => "Data" } } })[:file]
 
     expect(file.except(:checker)).to eq(formats: %i[ csv xlsx ], name_pattern: /\Ausers\.csv\z/, max_size: 1, max_rows: 2,
-      format: :xlsx, reader: nil, encoding: "Shift_JIS", headers: false, csv: { col_sep: ";" }, xlsx: { sheet: "Data" })
+      format: :xlsx, reader: nil, encoding: "Shift_JIS", headers: false, unknown_headers: :keep, csv: { col_sep: ";" }, xlsx: { sheet: "Data" })
   end
 
   it "requires file.format to be an allowed format" do
     expect(config_error({ "file" => { "formats" => [ "csv" ], "format" => "xlsx" } }))
       .to eq([ "file.format must be one of file.formats (csv)" ])
+  end
+
+  it "rejects an unknown file.unknown_headers" do
+    expect(config_error({ "file" => { "unknown_headers" => "reject" } })).to eq([ "file.unknown_headers must be one of skip, keep" ])
   end
 
   it "rejects an unknown file.format" do

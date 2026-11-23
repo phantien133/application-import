@@ -5,7 +5,7 @@ module ApplicationImport
       include Constants
 
       ROOT_KEYS = %w[ handler file columns validators output on_error ].freeze
-      FILE_KEYS = %w[ checker formats name_pattern max_size format reader max_rows encoding headers csv xlsx ].freeze
+      FILE_KEYS = %w[ checker formats name_pattern max_size format reader max_rows encoding headers unknown_headers csv xlsx ].freeze
       XLSX_KEYS = %w[ sheet ].freeze
       OUTPUT_KEYS = %w[ mode model batch_size upsert ].freeze
       UPSERT_KEYS = %w[ conflict_target update ].freeze
@@ -68,6 +68,7 @@ module ApplicationImport
           max_rows: integer(file.fetch("max_rows", DEFAULT_MAX_ROWS), "file.max_rows"),
           encoding: encoding(file.fetch("encoding", DEFAULT_ENCODING)),
           headers: boolean(file.fetch("headers", true), "file.headers"),
+          unknown_headers: one_of(file.fetch("unknown_headers", DEFAULT_UNKNOWN_HEADERS), UNKNOWN_HEADERS, "file.unknown_headers"),
           csv: CsvOptionsParser.new(file["csv"], @errors).parse,
           xlsx: reader_options(file["xlsx"], XLSX_KEYS, "file.xlsx")
         }

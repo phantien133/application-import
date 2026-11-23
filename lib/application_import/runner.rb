@@ -65,16 +65,22 @@ module ApplicationImport
       definition.file_checker_class.new(definition, logger:)
     end
 
-    # Streams the data rows through the reader (encoding gate, headers, max_rows);
-    # a FileError raised while reading halts the import.
+    # Streams the data rows through the reader (encoding gate, headers, max_rows) and
+    # maps them to attributes once the headers are checked (HeaderMapper); a file error
+    # while reading or in the headers halts the import.
     def read_file
-      reader.each { |raw| read_row(raw) }
+      reader.on_headers { |headers| map_headers(headers) }.each { |raw| read_row(raw) }
       info("read #{rows.size} rows from #{source.filename}")
+    end
+
+    def map_headers(headers)
+      @header_map = HeaderMapper.new(definition, logger:).call(headers, result)
+      halt! if result.file_errors?
     end
 
     def read_row(raw)
       result.increment(:total)
-      rows << raw
+      rows << Row.new(line: raw.line, attributes: @header_map.attributes(raw.values), raw: raw.values)
     end
 
     # Next stages (header mapping, casting, validators, write) work on #rows.

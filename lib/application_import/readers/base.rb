@@ -7,6 +7,8 @@ module ApplicationImport
     #   true  -> the first non-blank record is the header row, exposed by #headers
     #   false -> every record is data; #headers are the definition's column headers in
     #            definition order, so cells map to columns by position (RawRow#to_h)
+    # #on_headers registers a callback called with #headers once known: right after the
+    # header row, or before the first record without one (even for an empty file).
     # Blank records (no cell with content) are skipped.
     # Raises FileError: empty_file (no header / no data rows), too_many_rows (file.max_rows).
     class Base
@@ -31,10 +33,16 @@ module ApplicationImport
         headers? ? @headers : definition.columns.map(&:header)
       end
 
+      def on_headers(&block)
+        @on_headers = block
+        self
+      end
+
       def each(&)
         return enum_for(:each) unless block_given?
 
         @headers = nil
+        @on_headers&.call(headers) unless headers?
         count = read_rows(&)
         check_not_empty(count)
         self
@@ -61,6 +69,7 @@ module ApplicationImport
         return false unless headers? && @headers.nil?
 
         @headers = values.map { |value| value.to_s.strip }
+        @on_headers&.call(@headers)
         true
       end
 

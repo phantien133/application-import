@@ -160,4 +160,38 @@ RSpec.describe ApplicationImport::Readers::Base do
   it "exposes definition, source and logger" do
     expect([ reader.definition.name, reader.source.filename, reader.logger ]).to eq([ :users, "u.csv", nil ])
   end
+
+  describe "#on_headers" do
+    it "is called with the header row before the first data row and returns the reader" do
+      events = []
+      expect(reader.on_headers { |headers| events << [ :headers, headers ] }).to be(reader)
+
+      reader.each { |row| events << [ :row, row.line ] }
+
+      expect(events).to eq([ [ :headers, %w[ Email Name ] ], [ :row, 2 ] ])
+    end
+
+    context "with a header row only" do
+      let(:records) { [ [ 1, %w[ Email Name ] ] ] }
+
+      it "is called before empty_file is raised" do
+        seen = nil
+        reader.on_headers { |headers| seen = headers }
+
+        expect { reader.to_a }.to raise_error(ApplicationImport::Errors::FileError, "file has no data rows")
+        expect(seen).to eq(%w[ Email Name ])
+      end
+    end
+
+    context "without a header row" do
+      let(:file_config) { { "headers" => false } }
+
+      it "is called first with the column headers" do
+        events = []
+        reader.on_headers { |headers| events << headers }.each { |row| events << row.line }
+
+        expect(events).to eq([ %w[ Email Name ], 1, 2 ])
+      end
+    end
+  end
 end

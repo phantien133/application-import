@@ -129,7 +129,7 @@ RSpec.describe ApplicationImport do
       end)
       stub_const("E2eRunner", Class.new(ApplicationImport::Runner) do
         def process
-          result.add_records(rows.map(&:values))
+          result.add_records(rows.map(&:attributes))
         end
       end)
     end
@@ -143,7 +143,7 @@ RSpec.describe ApplicationImport do
     it "loads the definition from config_path and runs on a real file" do
       result = described_class.run(:users, dir.join("users_20260101.csv"), runner: "E2eRunner")
 
-      expect([ result.status, result.stats[:total], result.records ]).to eq([ :completed, 1, [ [ "a@example.com" ] ] ])
+      expect([ result.status, result.stats[:total], result.records ]).to eq([ :completed, 1, [ { email: "a@example.com" } ] ])
     end
 
     it "fails on file errors before processing" do
