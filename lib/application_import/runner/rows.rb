@@ -20,6 +20,9 @@ module ApplicationImport
     #
     # Checks report with row.add_error or by raising Errors::RowError (its row, or the
     # row of its line) / Errors::RowsError (every row of its lines).
+    #
+    # Memory: every row read stays until the end (verify and write need the kept rows,
+    # line lookups need all); skipped rows drop their record.
     module Rows
       SEVERITY = { allow: 0, skip: 1, abort: 2 }.freeze
 

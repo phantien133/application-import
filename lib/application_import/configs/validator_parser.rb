@@ -5,7 +5,7 @@ module ApplicationImport
       include Constants
 
       UNIQUE_IN_FILE_KEYS = %i[ keys case_sensitive ].freeze
-      MODEL_KEYS = %i[ model context except ].freeze
+      MODEL_KEYS = %i[ model context except skip ].freeze
 
       class << self
         # Resolves validator classes per stage and the model of model validators (their
@@ -83,14 +83,15 @@ module ApplicationImport
         check_keys(options, MODEL_KEYS, path)
         options[:model] = class_name(options[:model], "#{path}.model") if options.key?(:model)
         check_context(options, "#{path}.context")
-        options[:except] = names(options[:except], "#{path}.except").map(&:to_sym) if options.key?(:except)
+        %i[ except skip ].each { |key| options[key] = names(options[key], "#{path}.#{key}").map(&:to_sym) if options.key?(key) }
       end
 
       def check_context(options, path)
         return unless options.key?(:context)
 
-        context = options[:context]
-        add_error(path, "must be a non-blank string") unless context.is_a?(String) && context.present?
+        contexts = Array(options[:context])
+        valid = contexts.any? && contexts.all? { |context| (context.is_a?(String) || context.is_a?(Symbol)) && context.present? }
+        add_error(path, "must be a name or a non-empty list of names") unless valid
       end
 
       def check_unique_in_file(options, path)

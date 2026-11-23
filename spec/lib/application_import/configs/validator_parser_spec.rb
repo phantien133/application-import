@@ -81,6 +81,18 @@ RSpec.describe ApplicationImport::Configs::ValidatorParser do
       expect(errors).to be_empty
     end
 
+    it "keeps skip names" do
+      result = parse({ "row" => [ { "type" => "model", "skip" => [ "uniqueness", "check_manager" ] } ] })
+
+      expect([ result[:row].first[:options], errors ]).to eq([ { skip: %i[ uniqueness check_manager ] }, [] ])
+    end
+
+    it "accepts a list of contexts" do
+      result = parse({ "row" => [ { "type" => "model", "context" => %w[ create import ] } ] })
+
+      expect([ result[:row].first[:options], errors ]).to eq([ { context: %w[ create import ] }, [] ])
+    end
+
     it "accepts no option and a single except name" do
       expect([ parse({ "row" => [ { "type" => "model" } ] })[:row].first[:options],
         parse({ "row" => [ { "type" => "model", "except" => "uniqueness" } ] })[:row].first[:options] ])
@@ -93,7 +105,7 @@ RSpec.describe ApplicationImport::Configs::ValidatorParser do
       expect(errors).to contain_exactly(
         "validators.row[0] has unknown keys: strict",
         "validators.row[0].model must be a class name",
-        "validators.row[0].context must be a non-blank string",
+        "validators.row[0].context must be a name or a non-empty list of names",
         "validators.row[0].except must be a non-empty list of names"
       )
     end

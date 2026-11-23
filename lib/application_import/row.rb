@@ -38,8 +38,11 @@ module ApplicationImport
       errors.any?
     end
 
+    # A skipped row is never written: its record is released (memory); line, raw,
+    # attributes and errors stay for error reporting and later line lookups.
     def skip!
       @skipped = true
+      @record = nil
       self
     end
 

@@ -41,9 +41,11 @@ RSpec.describe ApplicationImport::Row do
     expect(row.to_h[:generated_keys]).to eq([ :full_name ])
   end
 
-  it "can be skipped" do
+  it "can be skipped, releasing its record" do
+    row.record = :record
+
     expect(row.skip!).to be(row)
-    expect(row.skipped?).to be(true)
+    expect([ row.skipped?, row.record, row.raw ]).to eq([ true, nil, [ "a" ] ])
   end
 
   it "compares by value" do

@@ -71,6 +71,89 @@ RSpec.describe ApplicationImport::Validators::ModelValidator do
     end
   end
 
+  def queries
+    count = 0
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") { |*, payload| count += 1 unless payload[:name] == "SCHEMA" }
+    yield
+    count
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber)
+  end
+
+  describe "skip (only in this step of this import)" do
+    def import_definition(name)
+      ApplicationImport::Definition.new(name, { "columns" => { "email" => nil, "name" => nil, "age" => nil }, "output" => { "model" => "MvUser" } })
+    end
+
+    it "does not run the skipped validators at all (no uniqueness query)" do
+      expect(queries { validator({}).call(row({ email: "a@x.io", name: "Ann" }), result) }).to eq(1)
+      expect(queries { validator({ skip: %i[ uniqueness ] }).call(row({ email: "a@x.io", name: "Ann" }), result) }).to eq(0)
+    end
+
+    it "applies to every model validator of the same import once configured" do
+      validator({ skip: %i[ uniqueness ] }).call(row({ email: "a@x.io" }), result)
+
+      expect(queries { validator({}).call(row({ email: "a@x.io", name: "Ann" }), result) }).to eq(0)
+    end
+
+    it "keeps every other validator and custom validate blocks" do
+      expect(errors_of({ email: nil, name: "bad" }, { skip: %i[ uniqueness ] }).map(&:first)).to eq(%i[ blank invalid ])
+    end
+
+    it "skips validate methods by name" do
+      MvUser.define_method(:no_admins) { errors.add(:name, :reserved, message: "is reserved") if name == "root" }
+      MvUser.validate :no_admins
+
+      expect([ errors_of({ email: "a@x.io", name: "root" }), errors_of({ email: "a@x.io", name: "root" }, { skip: %i[ no_admins ] }) ])
+        .to eq([ [ [ :reserved, "name", "Name is reserved" ] ], [] ])
+    end
+
+    it "leaves the model validating as usual outside this step (e.g. the write step)" do
+      MvUser.create!(email: "taken@x.io")
+      validator({ skip: %i[ uniqueness ] }).call(row({ email: "taken@x.io" }), result)
+      record = MvUser.new(email: "taken@x.io")
+
+      expect([ record.valid?, record.errors.map(&:type) ]).to eq([ false, %i[ taken ] ])
+    end
+
+    it "only applies to the import it is configured in" do
+      MvUser.create!(email: "taken@x.io")
+      described_class.new(import_definition(:users), { skip: %i[ uniqueness ] }).call(row({ email: "taken@x.io" }), result)
+      other = row({ email: "taken@x.io" })
+      described_class.new(import_definition(:members), {}).call(other, result)
+
+      expect(other.errors.map(&:code)).to eq(%i[ taken ])
+    end
+
+    it "honours the model's import_skip macro in this step" do
+      MvUser.include(ApplicationImport::Importable)
+      MvUser.import_skip :uniqueness, on: :users
+      MvUser.create!(email: "taken@x.io")
+
+      expect([ errors_of({ email: "taken@x.io" }), MvUser.new(email: "taken@x.io").valid? ]).to eq([ [], false ])
+    end
+  end
+
+  describe "except (errors ignored, validators still run)" do
+    it "hides the errors but still runs the validators" do
+      MvUser.create!(email: "taken@x.io")
+      validator = validator({ except: %i[ uniqueness ] })
+      row = row({ email: "taken@x.io" })
+
+      expect(queries { validator.call(row, result) }).to eq(1)
+      expect(row.errors).to eq([])
+    end
+  end
+
+  describe "context list" do
+    before { MvUser.validate(on: :create) { errors.add(:email, :created, message: "is checked on create") if email == "c@x.io" } }
+
+    it "runs every listed context, the default one included" do
+      expect([ errors_of({ email: "c@x.io" }, { context: "import" }), errors_of({ email: "c@x.io" }, { context: %w[ create import ] }).map(&:first) ])
+        .to eq([ [], %i[ created ] ])
+    end
+  end
+
   describe "except" do
     before { MvUser.create!(email: "taken@x.io") }
 
