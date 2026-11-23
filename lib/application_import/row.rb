@@ -38,6 +38,12 @@ module ApplicationImport
       errors.any?
     end
 
+    # Written in stream mode: the record is released, the row stays for line lookups.
+    def release!
+      @record = nil
+      self
+    end
+
     # A skipped row is never written: its record is released (memory); line, raw,
     # attributes and errors stay for error reporting and later line lookups.
     def skip!

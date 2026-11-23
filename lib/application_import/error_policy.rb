@@ -5,9 +5,15 @@ module ApplicationImport
   #                             (a check may report several), then the action applies;
   #                             :all: every check of the row runs and all its errors are
   #                             collected before the action applies
-  ErrorPolicy = Data.define(:default, :allow, :skip, :row_errors) do
-    def initialize(default: :abort, allow: [], skip: [], row_errors: :first)
+  #   max_errors             -> nil (default): no limit; N: once more than N row errors
+  #                             are recorded the import stops (file error too_many_errors)
+  ErrorPolicy = Data.define(:default, :allow, :skip, :row_errors, :max_errors) do
+    def initialize(default: :abort, allow: [], skip: [], row_errors: :first, max_errors: nil)
       super
+    end
+
+    def too_many?(count)
+      !max_errors.nil? && count > max_errors
     end
 
     def action_for(code)

@@ -4,7 +4,10 @@ module ApplicationImport
     #   mode:        raw | save | bulk; default bulk with a model, raw without
     #   model:       ActiveRecord model, required by save and bulk
     #   batch_size:  rows per activerecord-import call (bulk), default 1000
-    #   transaction: one transaction around the whole write (default true)
+    #   transaction: one transaction around each write call (default true)
+    #   stream:      write kept rows by batch_size while reading (default false), then
+    #                release their records; verify cannot be used (rows are written
+    #                before it) and a transaction only covers one batch
     #   upsert:      bulk only: { conflict_target:, update: } (update required) ->
     #                on_duplicate_key_update; to skip conflicting rows use
     #                import: { on_duplicate_key_ignore: true }
@@ -15,7 +18,7 @@ module ApplicationImport
       include Checks
       include Constants
 
-      KEYS = %w[ mode model batch_size transaction upsert import save ].freeze
+      KEYS = %w[ mode model batch_size transaction stream upsert import save ].freeze
       UPSERT_KEYS = %w[ conflict_target update ].freeze
       # Options the bulk writer supports; others (raise_error, synchronize,
       # track_validation_failures, returning, ...) change the result shape it relies on.
@@ -65,6 +68,7 @@ module ApplicationImport
           mode:, model:,
           batch_size: integer(@output.fetch("batch_size", DEFAULT_BATCH_SIZE), "output.batch_size"),
           transaction: boolean(@output.fetch("transaction", true), "output.transaction"),
+          stream: boolean(@output.fetch("stream", false), "output.stream"),
           upsert: upsert(@output["upsert"]),
           import: passthrough("import", IMPORT_OPTIONS),
           save: passthrough("save", SAVE_OPTIONS)

@@ -16,6 +16,7 @@ module ApplicationImport
         check_keys(@config, ROOT_KEYS, "config")
         parsed = parse_sections
         check_assign(parsed)
+        check_stream(parsed)
         raise Errors::ConfigError, "#{@name}: #{@errors.join("; ")}" if @errors.any?
 
         resolve_classes(parsed)
@@ -45,6 +46,12 @@ module ApplicationImport
         return add_error("file.unknown_headers", "assign needs output.model") if parsed[:output][:model].nil?
 
         warn_assign_all if file[:assign].nil?
+      end
+
+      def check_stream(parsed)
+        return unless parsed[:output][:stream] && parsed[:validators][:verify].any?
+
+        add_error("output.stream", "cannot be used with verify validators (rows are written before verify)")
       end
 
       def warn_assign_all

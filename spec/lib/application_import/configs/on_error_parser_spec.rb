@@ -20,6 +20,25 @@ RSpec.describe ApplicationImport::Configs::OnErrorParser do
     expect(errors).to be_empty
   end
 
+  describe "max_errors" do
+    it "is nil (no limit) unless given" do
+      expect([ parse(nil).max_errors, parse("skip").max_errors, parse({ "default" => "skip" }).max_errors,
+        parse({ "max_errors" => nil }).max_errors ]).to all(be_nil)
+    end
+
+    it "accepts an integer >= 1" do
+      expect(parse({ "max_errors" => 100 }).max_errors).to eq(100)
+      expect(errors).to be_empty
+    end
+
+    it "rejects other values" do
+      parse({ "max_errors" => 0 })
+      parse({ "max_errors" => "10" })
+
+      expect(errors).to eq([ "on_error.max_errors must be an integer >= 1" ] * 2)
+    end
+  end
+
   describe "row_errors" do
     it "defaults to first in both forms" do
       expect([ parse(nil).row_errors, parse("skip").row_errors, parse({ "default" => "skip" }).row_errors ]).to all(eq(:first))

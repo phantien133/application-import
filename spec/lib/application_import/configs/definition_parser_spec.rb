@@ -29,7 +29,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
       transformers: [],
       mapper: nil,
       validators: { file: [], row: [], rows: [], verify: [] },
-      output: { mode: :raw, model: nil, batch_size: 1000, transaction: true, upsert: nil, import: {}, save: {} },
+      output: { mode: :raw, model: nil, batch_size: 1000, transaction: true, stream: false, upsert: nil, import: {}, save: {} },
       on_error: ApplicationImport::ErrorPolicy.new
     )
     expect(result[:columns].map(&:key)).to eq(%i[ email name ])
@@ -128,7 +128,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
                                    "upsert" => { "conflict_target" => [ "email" ], "update" => [ "name" ] },
                                    "import" => { "validate" => false, "timestamps" => false } } })[:output]
 
-    expect(output).to eq(mode: :bulk, model: ImportUser, batch_size: 500, transaction: false,
+    expect(output).to eq(mode: :bulk, model: ImportUser, batch_size: 500, transaction: false, stream: false,
       upsert: { conflict_target: [ :email ], update: [ :name ] }, import: { validate: false, timestamps: false }, save: {})
   end
 

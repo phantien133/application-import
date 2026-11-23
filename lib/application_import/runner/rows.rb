@@ -24,8 +24,6 @@ module ApplicationImport
     # Memory: every row read stays until the end (verify and write need the kept rows,
     # line lookups need all); skipped rows drop their record.
     module Rows
-      SEVERITY = { allow: 0, skip: 1, abort: 2 }.freeze
-
       # Rows kept so far (skipped ones are dropped), in file order.
       def rows
         @rows_by_line.values.reject(&:skipped?)
@@ -46,6 +44,7 @@ module ApplicationImport
           break if stop_row?(row)
         end
         settle_all(row)
+        stream(row) if streaming?
       end
 
       # row_errors: first stops the row at the first check reporting an error that is
@@ -86,6 +85,7 @@ module ApplicationImport
 
       # cache: the same Hash the rows checks filled, e.g. keys collected for one query.
       # It may hold data of rows skipped later: filter by `rows` when it matters.
+      # Not a step with output.stream: rows are already written.
       def verify
         kept = rows
         validators(:verify).each { |validator| guard(validator.class) { validator.call(kept, result, cache) } }
@@ -98,9 +98,13 @@ module ApplicationImport
       # not_saved row error settled without halting inside the writer's transaction;
       # an abort halts once the writer returned.
       def write_rows
-        kept = rows
-        written = handler.write(kept, writer)
+        write_batch(streaming? ? unwritten_rows : rows)
+      end
+
+      def write_batch(batch)
+        written = handler.write(batch, writer)
         result.increment(:written, written)
+        batch.each(&:release!) if streaming?
         halt! if writer.aborted?
       end
 
@@ -127,36 +131,6 @@ module ApplicationImport
 
       def target(line, source)
         @rows_by_line[line] || raise(Errors::UnknownLineError.new(line:, source: source&.name))
-      end
-
-      # Settles the given row first, then any other row that got new errors.
-      # Settles only the rows that got new errors (Row#add_error marks them pending):
-      # the given row first, then the others in line order. Every row's errors are
-      # recorded before an abort halts.
-      def settle_all(row = nil)
-        rows = @pending_rows.to_a.sort_by(&:line)
-        rows.unshift(rows.delete(row)) if row && rows.include?(row)
-        actions = rows.map { |pending| settle(pending, halt: false) }
-        halt! if actions.include?(:abort)
-      end
-
-      # Records the row's new errors and applies on_error; returns the action. With
-      # halt: false an abort is only returned (the writer stops and the Runner halts).
-      def settle(row, halt: true)
-        @pending_rows.delete(row)
-        errors = row.take_new_errors
-        return if errors.empty?
-
-        result.increment(:invalid) if errors.size == row.errors.size
-        errors.each { |error| result.add_error(error) }
-        action = row_action(errors)
-        halt! if action == :abort && halt
-        row.skip! if action == :skip
-        action
-      end
-
-      def row_action(errors)
-        errors.map { |error| definition.on_error.action_for(error.code) }.max_by { |action| SEVERITY.fetch(action) }
       end
     end
   end

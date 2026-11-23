@@ -1022,6 +1022,129 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
     end
   end
 
+  describe "on_error.max_errors" do
+    let(:content) { "Email,Name\n" + (1..5).map { |i| ",n#{i}\n" }.join + "a@x.io,Ann\n" }
+
+    def bad_rows(on_error)
+      columns = { "email" => { "header" => "Email", "required" => true }, "name" => { "header" => "Name" } }
+      run(content, columns:, on_error:)
+    end
+
+    it "does not limit errors when absent" do
+      result = bad_rows("skip")
+
+      expect([ result.status, result.errors.map(&:code).tally, result.records.size ]).to eq([ :completed_with_errors, { required: 5 }, 1 ])
+    end
+
+    it "stops the import once more than max_errors row errors are recorded" do
+      result = bad_rows({ "default" => "skip", "max_errors" => 2 })
+
+      expect([ result.status, result.errors.map(&:code), result.stats[:total], result.records ])
+        .to eq([ :failed, %i[ required required required too_many_errors ], 3, [] ])
+      expect(result.errors.last.to_h).to eq(code: :too_many_errors, message: "more than 2 row errors, import stopped", details: { max_errors: 2 })
+    end
+
+    it "counts allowed errors too" do
+      result = bad_rows({ "allow" => [ "required" ], "max_errors" => 1 })
+
+      expect([ result.status, result.errors.map(&:code).last ]).to eq([ :failed, :too_many_errors ])
+    end
+
+    it "is reached by write errors as well, stopping the writer" do
+      ActiveRecord::Base.connection.create_table(:max_errors_users, temporary: true) { |t| t.string :name }
+      stub_const("MaxErrorsUser", Class.new(ApplicationRecord) do
+        self.table_name = "max_errors_users"
+        validates :name, presence: true
+      end)
+      columns = { "email" => { "header" => "Email" }, "name" => { "header" => "Name" } }
+      definition = definition(columns:, output: { "model" => "MaxErrorsUser", "mode" => "save" }, on_error: { "default" => "skip", "max_errors" => 1 })
+      result = ApplicationImport.run(definition, StringIO.new("Email,Name\na,\nb,\nc,Cy\n"), filename: "u.csv", logger:)
+
+      expect([ result.status, result.errors.map(&:code), MaxErrorsUser.count ]).to eq([ :failed, %i[ not_saved not_saved too_many_errors ], 0 ])
+    end
+  end
+
+  describe "output.stream" do
+    before do
+      ActiveRecord::Base.connection.create_table(:stream_spec_users, temporary: true) do |t|
+        t.string :email
+        t.string :name
+      end
+      stub_const("StreamSpecUser", Class.new(ApplicationRecord) do
+        self.table_name = "stream_spec_users"
+        validates :name, presence: true
+      end)
+    end
+
+    let(:content) { "Email,Name\n" + (1..5).map { |i| "u#{i}@x.io,N#{i}\n" }.join }
+
+    def stream_definition(**config)
+      definition(output: { "model" => "StreamSpecUser", "stream" => true, "batch_size" => 2, **config.delete(:output).to_h }, **config)
+    end
+
+    it "writes by batch_size while reading, the rest at the end" do
+      imports = []
+      allow(StreamSpecUser).to receive(:import).and_wrap_original { |original, records, **options| (imports << records.size) && original.call(records, **options) }
+      result = ApplicationImport.run(stream_definition, StringIO.new(content), filename: "u.csv", logger:)
+
+      expect([ result.status, result.stats[:written], imports, StreamSpecUser.count ]).to eq([ :completed, 5, [ 2, 2, 1 ], 5 ])
+    end
+
+    it "writes each batch before reading the next rows" do
+      seen = []
+      allow(StreamSpecUser).to receive(:import).and_wrap_original do |original, records, **options|
+        (seen << [ :import, records.map(&:email) ]) && original.call(records, **options)
+      end
+      stub_const("Spy", Class.new(ApplicationImport::Validators::RowValidator) { define_method(:call) { |row, _result| seen << [ :row, row.line ] } })
+
+      ApplicationImport.run(stream_definition(validators: { "row" => [ { "class" => "Spy" } ] }), StringIO.new(content), filename: "u.csv", logger:)
+
+      expect(seen.first(4)).to eq([ [ :row, 2 ], [ :row, 3 ], [ :import, %w[ u1@x.io u2@x.io ] ], [ :row, 4 ] ])
+    end
+
+    it "releases the records of written rows" do
+      runner = ApplicationImport::Runner.new(stream_definition, ApplicationImport::Source.build(StringIO.new(content), filename: "u.csv"), logger:)
+      runner.call
+
+      expect([ runner.rows.size, runner.rows.map(&:record) ]).to eq([ 5, [ nil ] * 5 ])
+    end
+
+    it "does not write skipped rows" do
+      result = ApplicationImport.run(stream_definition(on_error: "skip"), StringIO.new("Email,Name\na,A\nb,\nc,C\n"), filename: "u.csv", logger:)
+
+      expect([ result.stats[:written], StreamSpecUser.pluck(:email).sort ]).to eq([ 2, %w[ a c ] ])
+    end
+
+    it "keeps batches written before an abort (the transaction covers one batch)" do
+      result = ApplicationImport.run(stream_definition, StringIO.new("Email,Name\na,A\nb,B\nc,\nd,D\n"), filename: "u.csv", logger:)
+
+      expect([ result.status, StreamSpecUser.pluck(:email).sort ]).to eq([ :failed, %w[ a b ] ])
+    end
+
+    it "cannot be used with verify validators" do
+      stub_const("TotalCheck", Class.new(ApplicationImport::Validators::VerifyValidator))
+
+      expect(config_error(output: { "model" => "StreamSpecUser", "stream" => true }, validators: { "verify" => [ { "class" => "TotalCheck" } ] }))
+        .to eq("users: output.stream cannot be used with verify validators (rows are written before verify)")
+    end
+
+    it "fails before reading when the handler overrides verify" do
+      stub_const("VerifyingHandler", Class.new(ApplicationImport::Handler) { define_method(:verify) { |*| nil } })
+
+      expect { ApplicationImport.run(stream_definition(handler: "VerifyingHandler"), StringIO.new(content), filename: "u.csv", logger:) }
+        .to raise_error(ApplicationImport::Errors::ConfigError, /output.stream cannot be used with VerifyingHandler#verify/)
+      expect(StreamSpecUser.count).to eq(0)
+    end
+
+    it "is off by default (everything written after verify)" do
+      imports = []
+      allow(StreamSpecUser).to receive(:import).and_wrap_original { |original, records, **options| (imports << records.size) && original.call(records, **options) }
+      ApplicationImport.run(definition(output: { "model" => "StreamSpecUser", "batch_size" => 2 }), StringIO.new(content), filename: "u.csv", logger:)
+
+      expect(imports).to eq([ 2, 2, 1 ])
+    end
+  end
+
   describe "settings defaults" do
     after { ApplicationImport.reset_configuration! }
 

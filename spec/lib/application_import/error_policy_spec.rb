@@ -10,6 +10,11 @@ RSpec.describe ApplicationImport::ErrorPolicy do
       .to eq([ :first, false, true ])
   end
 
+  it "has no error limit by default, else a count above max_errors is too many" do
+    expect([ described_class.new.too_many?(10_000), described_class.new(max_errors: 2).too_many?(2),
+      described_class.new(max_errors: 2).too_many?(3) ]).to eq([ false, false, true ])
+  end
+
   it "accepts String codes" do
     expect(described_class.new(allow: %i[ duplicate ]).action_for("duplicate")).to eq(:allow)
   end

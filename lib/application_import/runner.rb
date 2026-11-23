@@ -7,6 +7,8 @@ module ApplicationImport
     include Logging
     include Rows
     include Lifecycle
+    include Settling
+    include Streaming
     include RowMapping
 
     attr_reader :definition, :source, :context, :handler, :result, :cache
@@ -46,11 +48,12 @@ module ApplicationImport
     private
 
     def run_steps
+      check_streaming!
       step { validate_file }
       step { open_reader }
       step { read_headers }
       step { process }
-      step { verify }
+      step { verify } unless streaming?
       step { write_rows }
     end
 
