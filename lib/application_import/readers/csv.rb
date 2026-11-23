@@ -9,6 +9,7 @@ module ApplicationImport
     # first, so files mixing \n, \r\n and \r parse (quoted values get LF too).
     # skip_lines is applied by SkipLines on the raw lines before the parser (not by
     # CSV.new): only lines starting a record, blanked so line numbers stay right.
+    # max_field_size defaults to DEFAULT_MAX_FIELD_SIZE (1 MiB characters).
     # Raises FileError malformed_csv, plus the Base and EncodingGate errors.
     class Csv < Base
       private
@@ -32,13 +33,15 @@ module ApplicationImport
         raise Errors::FileError.new("malformed CSV: #{e.message}", code: :malformed_csv)
       end
 
+      # file.csv options, max_field_size defaulting to DEFAULT_MAX_FIELD_SIZE, then the
+      # passthrough options on top.
       def parser_options
-        options = definition.file[:csv]
-        passthrough = options[:passthrough]
-        return options.dup unless passthrough
+        options = { max_field_size: Constants::DEFAULT_MAX_FIELD_SIZE }.merge(definition.file[:csv])
+        passthrough = options.delete(:passthrough)
+        return options unless passthrough
 
         debug("passing unvalidated CSV options: #{passthrough.keys.join(", ")}")
-        options.except(:passthrough).merge(passthrough)
+        options.merge(passthrough)
       end
 
       # Physical lines consumed by one record, quoted line breaks included.

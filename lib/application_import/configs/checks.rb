@@ -60,7 +60,7 @@ module ApplicationImport
       def regexp(value, path)
         return if value.nil?
 
-        Regexp.new(value.to_s)
+        Regexp.new(value.to_s, timeout: Constants::REGEXP_TIMEOUT)
       rescue RegexpError => e
         add_error(path, "is not a valid regexp: #{e.message}")
       end

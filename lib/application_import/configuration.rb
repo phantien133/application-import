@@ -11,7 +11,7 @@ module ApplicationImport
     ENV_KEYS = %w[ shared development test production ].freeze
 
     attr_reader :config_path, :defaults
-    attr_writer :logger
+    attr_writer :logger, :cache_definitions
 
     def initialize
       self.config_path = "config/imports"
@@ -20,6 +20,14 @@ module ApplicationImport
 
     # Set with `configure { |config| config.logger = ... }`; defaults to Rails.logger
     # (read on each call so a swapped Rails.logger is picked up).
+    # Cache loaded definitions: set with configure; by default on when code is not
+    # reloaded, except in the test environment (specs change definitions on disk).
+    def cache_definitions?
+      return @cache_definitions unless @cache_definitions.nil?
+
+      !Rails.application.config.enable_reloading && !Rails.env.test?
+    end
+
     def logger
       @logger || Rails.logger
     end
@@ -74,11 +82,25 @@ module ApplicationImport
 
     private
 
+    # Flat settings, or only environment sections (shared + the current env merged);
+    # mixing both, or a section that is not a mapping, is an error. Empty sections are {}.
     def scoped(settings, path)
       raise Errors::ConfigError, "import settings must be a mapping: #{path}" unless settings.is_a?(Hash)
-      return settings unless settings.keys.intersect?(ENV_KEYS + [ Rails.env ])
 
-      settings.fetch("shared", {}).deep_merge(settings.fetch(Rails.env, {}))
+      sections = settings.keys & (ENV_KEYS + [ Rails.env ])
+      return settings if sections.empty?
+
+      flat = settings.keys - sections
+      raise Errors::ConfigError, "import settings mix flat keys (#{flat.join(", ")}) with environment sections: #{path}" if flat.any?
+
+      section(settings, "shared", path).deep_merge(section(settings, Rails.env, path))
+    end
+
+    def section(settings, name, path)
+      value = settings[name] || {}
+      raise Errors::ConfigError, "import settings section #{name} must be a mapping: #{path}" unless value.is_a?(Hash)
+
+      value
     end
   end
 end

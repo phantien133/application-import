@@ -36,7 +36,7 @@ module ApplicationImport
       model = definition.output[:model]
       return unless model
 
-      RecordBuilder.build(model, attributes, definition.columns, assign_unknown: definition.file[:unknown_headers] == :assign,
+      RecordBuilder.build(model, attributes, definition.columns, assign: definition.assign_rules,
         generated: row.generated_keys)
     end
 

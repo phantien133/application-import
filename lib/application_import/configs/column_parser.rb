@@ -113,7 +113,7 @@ module ApplicationImport
         return if value.nil?
 
         names(value, path).filter_map do |source|
-          Regexp.new(source, Regexp::IGNORECASE)
+          Regexp.new(source, Regexp::IGNORECASE, timeout: REGEXP_TIMEOUT)
         rescue RegexpError => e
           add_error(path, "is not a valid regexp: #{e.message}")
         end.presence

@@ -24,10 +24,13 @@ module ApplicationImport
 
     # `source` is an import name (config_path/<name>.yml) or a definition file path
     # (Pathname, or a String ending in .yml/.yaml; relative to Rails.root).
+    # Loads outside the cache's lock (YAML IO, class resolution, schema reads must not
+    # serialize other loads or deadlock on a nested call); the first stored wins.
     def definition(source)
       return Definition.load(source) unless cache_definitions?
 
-      DEFINITIONS.compute_if_absent(Definition.locate(source).last.to_s) { Definition.load(source) }
+      key = Definition.locate(source).last.to_s
+      DEFINITIONS.fetch(key) { DEFINITIONS.put_if_absent(key, Definition.load(source)) || DEFINITIONS[key] }
     end
 
     def clear_definitions!
@@ -35,7 +38,7 @@ module ApplicationImport
     end
 
     def cache_definitions?
-      !Rails.application.config.enable_reloading
+      configuration.cache_definitions?
     end
 
     # `logger:` overrides the configured logger for this run only.

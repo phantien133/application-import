@@ -11,8 +11,8 @@ RSpec.describe ApplicationImport::RecordBuilder do
 
   let(:columns) { [ ApplicationImport::Column.new(key: :email, headers: [ "Email" ], type: :string, options: {}) ] }
 
-  def build(attributes, assign_unknown: false)
-    described_class.build(RbUser, attributes, columns, assign_unknown:)
+  def build(attributes, assign: nil)
+    described_class.build(RbUser, attributes, columns, assign:)
   end
 
   it "assigns declared columns only by default" do
@@ -27,21 +27,41 @@ RSpec.describe ApplicationImport::RecordBuilder do
     expect([ record.email, record.full_name ]).to eq([ "a@x.io", "Ann" ])
   end
 
-  context "with assign_unknown" do
+  context "with assign rules (unknown_headers: assign)" do
     it "assigns kept headers naming a model attribute, as read" do
-      record = build({ :email => "a@x.io", "Phone" => " 090 ", "Full Name" => "Ann" }, assign_unknown: true)
+      record = build({ :email => "a@x.io", "Phone" => " 090 ", "Full Name" => "Ann" }, assign: {})
 
       expect([ record.email, record.phone, record.full_name ]).to eq([ "a@x.io", " 090 ", "Ann" ])
     end
 
     it "ignores headers that are not attributes, the primary key and declared columns" do
-      record = build({ :email => "a@x.io", "nickname" => "x", "ID" => "99", "Email" => "other@x.io" }, assign_unknown: true)
+      record = build({ :email => "a@x.io", "nickname" => "x", "ID" => "99", "Email" => "other@x.io" }, assign: {})
 
       expect([ record.id, record.email, record.respond_to?(:nickname) ]).to eq([ nil, "a@x.io", false ])
     end
 
     it "lets the model type-cast the raw value" do
-      expect(build({ "admin" => "1" }, assign_unknown: true).admin).to be(true)
+      expect(build({ "admin" => "1" }, assign: {}).admin).to be(true)
+    end
+
+    it "assigns only the allowed attributes with allow" do
+      record = build({ "Phone" => "1", "Full Name" => "Ann", "admin" => "1" }, assign: { allow: %w[ phone ] })
+
+      expect([ record.phone, record.full_name, record.admin ]).to eq([ "1", nil, false ])
+    end
+
+    it "assigns every matching attribute but the ignored ones with ignore" do
+      record = build({ "Phone" => "1", "Full Name" => "Ann", "admin" => "1" }, assign: { ignore: %w[ admin ] })
+
+      expect([ record.phone, record.full_name, record.admin ]).to eq([ "1", "Ann", false ])
+    end
+  end
+
+  describe ".assigned_attribute" do
+    it "is the attribute the header names when the rules allow it" do
+      expect([ described_class.assigned_attribute(RbUser, "Full Name", {}), described_class.assigned_attribute(RbUser, "Full Name", { allow: %w[ phone ] }),
+        described_class.assigned_attribute(RbUser, "Phone", { ignore: %w[ phone ] }), described_class.assigned_attribute(RbUser, "nope", {}) ])
+        .to eq([ "full_name", nil, nil, nil ])
     end
   end
 

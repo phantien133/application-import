@@ -23,7 +23,7 @@ module ApplicationImport
         private
 
         def resolve_model!(spec, output_model, path)
-          model = spec[:options][:model] = ClassResolver.resolve!(spec[:options][:model], base: "ActiveRecord::Base")
+          model = spec[:options][:model] = ClassResolver.resolve_model!(spec[:options][:model], path: "#{path}.model")
           raise Errors::ConfigError, "#{path}.model is required without output.model" unless model || output_model
         end
       end

@@ -6,7 +6,7 @@ module ApplicationImport
       include Constants
 
       KEYS = %w[ checker formats name_pattern max_size format reader encoding headers require_all_headers
-        unknown_headers extra_cells csv xlsx ].freeze
+        unknown_headers assign extra_cells csv xlsx ].freeze
       XLSX_KEYS = %w[ sheet ].freeze
       HOST_ALIASES = %w[ locale external filesystem internal ].freeze
 
@@ -50,8 +50,22 @@ module ApplicationImport
           headers: boolean(@file.fetch("headers", true), "file.headers"),
           require_all_headers: boolean(@file.fetch("require_all_headers", false), "file.require_all_headers"),
           unknown_headers: one_of(@file.fetch("unknown_headers", DEFAULT_UNKNOWN_HEADERS), UNKNOWN_HEADERS, "file.unknown_headers"),
-          extra_cells: one_of(@file.fetch("extra_cells", DEFAULT_EXTRA_CELLS), EXTRA_CELLS, "file.extra_cells")
+          extra_cells: one_of(@file.fetch("extra_cells", DEFAULT_EXTRA_CELLS), EXTRA_CELLS, "file.extra_cells"),
+          assign: assign_rules
         }
+      end
+
+      # file.assign (with unknown_headers: assign): { allow: [...] } or { ignore: [...] },
+      # attribute names; nil when absent (every matching attribute, warned at load).
+      def assign_rules
+        return unless @file.key?("assign")
+
+        rules = mapping(@file["assign"], "file.assign")
+        check_keys(rules, %w[ allow ignore ], "file.assign")
+        return add_error("file.assign", "needs exactly one of allow, ignore") unless rules.keys.intersection(%w[ allow ignore ]).one?
+
+        key = rules.key?("allow") ? :allow : :ignore
+        { key => names(rules[key.to_s], "file.assign.#{key}").map { |name| name.strip.downcase } }
       end
 
       def check_format_allowed(parsed)

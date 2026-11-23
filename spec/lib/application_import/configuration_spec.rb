@@ -38,6 +38,25 @@ RSpec.describe ApplicationImport::Configuration do
     end
   end
 
+  describe "#cache_definitions?" do
+    it "is off in the test environment by default" do
+      expect(configuration.cache_definitions?).to be(false)
+    end
+
+    it "follows code reloading elsewhere" do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+      allow(Rails.application.config).to receive(:enable_reloading).and_return(false, true)
+
+      expect([ configuration.cache_definitions?, configuration.cache_definitions? ]).to eq([ true, false ])
+    end
+
+    it "is configurable" do
+      configuration.cache_definitions = true
+
+      expect(configuration.cache_definitions?).to be(true)
+    end
+  end
+
   describe "#defaults=" do
     it "stringifies and deep-freezes the mapping" do
       configuration.defaults = { file: { max_size: 1 } }
@@ -79,6 +98,26 @@ RSpec.describe ApplicationImport::Configuration do
 
       expect([ configuration.config_path, configuration.defaults ])
         .to eq([ Rails.root.join("config/imports"), { "file" => { "max_size" => 1, "encoding" => "Shift_JIS" } } ])
+    end
+
+    it "treats an empty environment section as no settings" do
+      dir.join("s.yml").write("shared:\n  config_path: #{dir}\ntest:\n")
+
+      expect(configuration.load_file(dir.join("s.yml")).config_path).to eq(dir)
+    end
+
+    it "rejects a section that is not a mapping" do
+      dir.join("s.yml").write("shared: [ 1 ]\n")
+
+      expect { configuration.load_file(dir.join("s.yml")) }
+        .to raise_error(ApplicationImport::Errors::ConfigError, /import settings section shared must be a mapping/)
+    end
+
+    it "rejects flat keys mixed with environment sections" do
+      dir.join("s.yml").write("config_path: x\ntest:\n  defaults: {}\n")
+
+      expect { configuration.load_file(dir.join("s.yml")) }
+        .to raise_error(ApplicationImport::Errors::ConfigError, /mix flat keys \(config_path\) with environment sections/)
     end
 
     it "raises on unknown keys, missing files and invalid YAML" do

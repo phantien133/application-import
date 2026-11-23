@@ -38,9 +38,18 @@ module ApplicationImport
       end
 
       def check_assign(parsed)
-        return unless parsed[:file][:unknown_headers] == :assign && parsed[:output][:model].nil?
+        file = parsed[:file]
+        add_error("file.assign", "is only used with unknown_headers: assign") if file[:assign] && file[:unknown_headers] != :assign
+        return unless file[:unknown_headers] == :assign
 
-        add_error("file.unknown_headers", "assign needs output.model")
+        return add_error("file.unknown_headers", "assign needs output.model") if parsed[:output][:model].nil?
+
+        warn_assign_all if file[:assign].nil?
+      end
+
+      def warn_assign_all
+        ApplicationImport.logger&.warn("[ApplicationImport] #{@name}: unknown_headers: assign without file.assign allow / ignore " \
+                                       "- every file header naming a model attribute can be assigned")
       end
 
       def parse_columns
@@ -74,7 +83,7 @@ module ApplicationImport
       end
 
       def resolve_output(output)
-        output[:model] = ClassResolver.resolve!(output[:model], base: "ActiveRecord::Base")
+        output[:model] = ClassResolver.resolve_model!(output[:model], path: "#{@name}: output.model")
         OutputParser.check_model_attributes!(output, name: @name)
       end
 

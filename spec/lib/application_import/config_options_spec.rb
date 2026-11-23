@@ -442,13 +442,25 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
 
       expect(result.status).to eq(:completed)
       expect(records.map { |r| [ r.email, r.phone, r.score ] }).to eq([ [ "a@x.io", " 090 ", 7 ] ])
-      expect(log.string).to include("not matching a AssignSpecUser attribute, kept but not assigned: Note")
+      expect(log.string).to include("not assigned to AssignSpecUser (no such attribute, or not allowed by file.assign), kept: Note")
     end
 
     it "lets the model validations see the assigned values" do
       result, = records("Email,Name,Phone\na@x.io,Ann,\n", validators: { "row" => [ { "type" => "model" } ] }, on_error: "skip")
 
       expect(result.errors.map { |e| [ e.code, e.column ] }).to eq([ [ :blank, "phone" ] ])
+    end
+
+    it "assigns only the attributes listed in file.assign.allow" do
+      _, records = records("Email,Name,Phone,Score\na@x.io,Ann,090,7\n", file: { "unknown_headers" => "assign", "assign" => { "allow" => [ "phone" ] } })
+
+      expect(records.map { |r| [ r.phone, r.score ] }).to eq([ [ "090", nil ] ])
+    end
+
+    it "assigns all but the attributes listed in file.assign.ignore" do
+      _, records = records("Email,Name,Phone,Score\na@x.io,Ann,090,7\n", file: { "unknown_headers" => "assign", "assign" => { "ignore" => [ "phone" ] } })
+
+      expect(records.map { |r| [ r.phone, r.score ] }).to eq([ [ nil, 7 ] ])
     end
 
     it "never assigns with keep" do
@@ -500,6 +512,20 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
 
     it "skips lines matching skip_lines" do
       expect(outcome("# export\nEmail,Name\n# note\na@x.io,Ann\n", file: { "csv" => { "skip_lines" => '\A#' } })).to eq(ok(ann))
+    end
+
+    it "limits fields to DEFAULT_MAX_FIELD_SIZE when max_field_size is absent" do
+      stub_const("ApplicationImport::Constants::DEFAULT_MAX_FIELD_SIZE", 10)
+
+      expect([ outcome, outcome("Email,Name\na@x.io,#{"x" * 11}\n") ]).to eq([ ok(ann), failed(:malformed_csv) ])
+    end
+
+    it "lets max_field_size or passthrough raise the default" do
+      stub_const("ApplicationImport::Constants::DEFAULT_MAX_FIELD_SIZE", 10)
+      content = "Email,Name\na@x.io,#{"x" * 11}\n"
+
+      expect([ outcome(content, file: { "csv" => { "max_field_size" => 20 } }).first,
+        outcome(content, file: { "csv" => { "passthrough" => { "max_field_size" => 20 } } }).first ]).to all(eq(:completed))
     end
 
     it "rejects fields longer than max_field_size" do
@@ -982,6 +1008,17 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
         config_error(output: { "model" => "OutputSpecUser", "transaction" => "yes" }) ])
         .to eq([ "users: output.mode must be one of raw, save, bulk", "users: output.model is required when mode is save",
           "users: output.import is only used when mode is bulk", "users: output.transaction must be true or false" ])
+    end
+  end
+
+  describe "regexp timeouts" do
+    it "compiles every regexp from the definition with a timeout" do
+      definition = definition(file: { "name_pattern" => "x", "csv" => { "skip_lines" => "#" } },
+        columns: { "email" => { "format" => "@", "header_pattern" => "mail" } })
+      column = definition.columns.first
+
+      expect([ definition.file[:name_pattern], definition.file[:csv][:skip_lines], column.options[:format], column.header_patterns.first ]
+        .map(&:timeout)).to all(eq(ApplicationImport::Constants::REGEXP_TIMEOUT))
     end
   end
 

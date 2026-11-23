@@ -48,8 +48,25 @@ RSpec.describe ApplicationImport do
       expect { described_class.definition("../users") }.to raise_error(ApplicationImport::Errors::ConfigError, /invalid import name/)
     end
 
-    it "caches only when code reloading is disabled" do
-      expect(described_class.cache_definitions?).to eq(!Rails.application.config.enable_reloading)
+    it "loads outside the cache lock, so a nested definition call does not deadlock" do
+      allow(described_class).to receive(:cache_definitions?).and_return(true)
+      other = instance_double(ApplicationImport::Definition)
+      allow(ApplicationImport::Definition).to receive(:load) do |source|
+        (source.to_s == "users") ? described_class.definition(:members) && definition : other
+      end
+
+      expect([ described_class.definition(:users), described_class.definition(:members) ]).to eq([ definition, other ])
+    end
+
+    it "keeps the first stored definition when two loads race" do
+      allow(described_class).to receive(:cache_definitions?).and_return(true)
+      late = instance_double(ApplicationImport::Definition)
+      allow(ApplicationImport::Definition).to receive(:load) do
+        ApplicationImport::DEFINITIONS[ApplicationImport::Definition.locate(:users).last.to_s] ||= definition
+        late
+      end
+
+      expect([ described_class.definition(:users), described_class.definition(:users) ]).to eq([ definition, definition ])
     end
   end
 

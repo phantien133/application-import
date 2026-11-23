@@ -39,5 +39,11 @@ module ApplicationImport
     DEFAULT_UNKNOWN_HEADERS = "skip".freeze
     DEFAULT_EXTRA_CELLS = "warn".freeze
     DEFAULT_BATCH_SIZE = 1000
+    # Seconds a regexp from a definition (name_pattern, header_pattern, skip_lines, format)
+    # may run on one value: patterns come from config, values from uploaded files.
+    REGEXP_TIMEOUT = 1.0
+    # Characters a CSV field may hold unless file.csv.max_field_size says otherwise: an
+    # unclosed quote cannot buffer the rest of the file into one field.
+    DEFAULT_MAX_FIELD_SIZE = 1_048_576
   end
 end

@@ -25,7 +25,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     expect(result.except(:columns)).to eq(
       handler: ApplicationImport::Handler,
       file: { checker: ApplicationImport::FileChecker, formats: nil, name_pattern: nil, max_size: nil,
-              format: :csv, reader: nil, encoding: "UTF-8", headers: true, require_all_headers: false, unknown_headers: :skip, extra_cells: :warn, csv: {}, xlsx: {} },
+              format: :csv, reader: nil, encoding: "UTF-8", headers: true, require_all_headers: false, unknown_headers: :skip, extra_cells: :warn, assign: nil, csv: {}, xlsx: {} },
       transformers: [],
       mapper: nil,
       validators: { file: [], row: [], rows: [], verify: [] },
@@ -56,7 +56,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
                                "xlsx" => { "sheet" => "Data" } } })[:file]
 
     expect(file.except(:checker)).to eq(formats: %i[ csv xlsx ], name_pattern: /\Ausers\.csv\z/, max_size: 1,
-      format: :xlsx, reader: nil, encoding: "Shift_JIS", headers: false, require_all_headers: true, unknown_headers: :keep, extra_cells: :reject, csv: { col_sep: ";" }, xlsx: { sheet: "Data" })
+      format: :xlsx, reader: nil, encoding: "Shift_JIS", headers: false, require_all_headers: true, unknown_headers: :keep, extra_cells: :reject, assign: nil, csv: { col_sep: ";" }, xlsx: { sheet: "Data" })
   end
 
   it "requires file.format to be an allowed format" do
@@ -130,6 +130,56 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
 
     expect(output).to eq(mode: :bulk, model: ImportUser, batch_size: 500, transaction: false,
       upsert: { conflict_target: [ :email ], update: [ :name ] }, import: { validate: false, timestamps: false }, save: {})
+  end
+
+  describe "file.assign" do
+    before { stub_const("AssignUser", Class.new(ApplicationRecord)) }
+
+    def assign_config(assign, unknown_headers: "assign")
+      { "file" => { "unknown_headers" => unknown_headers, **(assign.nil? ? {} : { "assign" => assign }) }, "output" => { "model" => "AssignUser" } }
+    end
+
+    it "parses allow or ignore as attribute names" do
+      expect([ parse(assign_config({ "allow" => [ "Phone", "note" ] }))[:file][:assign], parse(assign_config({ "ignore" => "admin" }))[:file][:assign] ])
+        .to eq([ { allow: %w[ phone note ] }, { ignore: %w[ admin ] } ])
+    end
+
+    it "requires exactly one of allow, ignore" do
+      expect([ config_error(assign_config({ "allow" => [ "a" ], "ignore" => [ "b" ] })), config_error(assign_config({})) ])
+        .to all(eq([ "file.assign needs exactly one of allow, ignore" ]))
+    end
+
+    it "rejects unknown keys and empty lists" do
+      expect(config_error(assign_config({ "allow" => [], "only" => 1 })))
+        .to contain_exactly("file.assign has unknown keys: only", "file.assign.allow must be a non-empty list of names")
+    end
+
+    it "is only used with unknown_headers: assign" do
+      expect(config_error(assign_config({ "allow" => [ "a" ] }, unknown_headers: "keep")))
+        .to eq([ "file.assign is only used with unknown_headers: assign" ])
+    end
+
+    it "warns at load when assign has no list" do
+      log = StringIO.new
+      ApplicationImport.configure { |config| config.logger = ActiveSupport::Logger.new(log) }
+
+      parse(assign_config(nil))
+
+      expect(log.string).to include("users: unknown_headers: assign without file.assign allow / ignore")
+    ensure
+      ApplicationImport.reset_configuration!
+    end
+
+    it "does not warn with a list" do
+      log = StringIO.new
+      ApplicationImport.configure { |config| config.logger = ActiveSupport::Logger.new(log) }
+
+      parse(assign_config({ "allow" => [ "phone" ] }))
+
+      expect(log.string).to eq("")
+    ensure
+      ApplicationImport.reset_configuration!
+    end
   end
 
   describe "upsert attributes" do
@@ -277,6 +327,18 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     it "raises InvalidClassError for a model validator model that is not an ActiveRecord model" do
       expect { parse({ "validators" => { "row" => [ { "type" => "model", "model" => "String" } ] } }) }
         .to raise_error(ApplicationImport::Errors::InvalidClassError, "String must inherit from ActiveRecord::Base")
+    end
+
+    it "rejects abstract models and ActiveRecord::Base as output.model" do
+      expect { parse({ "output" => { "model" => "ApplicationRecord" } }) }
+        .to raise_error(ApplicationImport::Errors::InvalidClassError, "users: output.model must be a concrete model, ApplicationRecord is abstract")
+      expect { parse({ "output" => { "model" => "ActiveRecord::Base" } }) }
+        .to raise_error(ApplicationImport::Errors::InvalidClassError, /must be a concrete model, ActiveRecord::Base is abstract/)
+    end
+
+    it "rejects an abstract model for a model validator" do
+      expect { parse({ "validators" => { "row" => [ { "type" => "model", "model" => "ApplicationRecord" } ] } }) }
+        .to raise_error(ApplicationImport::Errors::InvalidClassError, "users: validators.row[0].model must be a concrete model, ApplicationRecord is abstract")
     end
 
     it "raises InvalidClassError for a model that is not an ActiveRecord model" do

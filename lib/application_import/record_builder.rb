@@ -2,16 +2,21 @@ module ApplicationImport
   # Builds a new model record from row attributes.
   # Declared columns and transformer-generated keys: assigned when the model can set
   # them (setter).
-  # Kept unknown headers (String keys): never assigned, unless assign_unknown (file.
-  # unknown_headers: assign); then those naming a model attribute (header downcased,
-  # spaces -> _, not the primary key nor a declared column) are assigned as read.
+  # Kept unknown headers (String keys): never assigned, unless `assign` (rules of
+  # file.unknown_headers: assign, see Definition#assign_rules); then those naming a model
+  # attribute (header downcased, spaces -> _, not the primary key nor a declared column)
+  # and allowed by the rules are assigned as read:
+  #   {}                 -> every such attribute
+  #   { allow: [ ... ] } -> only these attributes
+  #   { ignore: [ ... ] }-> all but these attributes
   module RecordBuilder
     module_function
 
-    # generated: Symbol keys produced by transformers, assigned like declared columns.
-    def build(model, attributes, columns, assign_unknown: false, generated: [])
+    # generated: Symbol keys produced by transformers / the mapper, assigned like
+    # declared columns. assign: nil (kept headers never assigned) or the assign rules.
+    def build(model, attributes, columns, assign: nil, generated: [])
       record = model.new
-      record.assign_attributes(unknown(model, attributes, columns)) if assign_unknown
+      record.assign_attributes(unknown(model, attributes, columns, assign)) if assign
       record.assign_attributes(assignable(record, attributes, columns.map(&:key) | generated))
       record
     end
@@ -22,14 +27,27 @@ module ApplicationImport
       end
     end
 
-    def unknown(model, attributes, columns)
+    def unknown(model, attributes, columns, rules)
       declared = columns.map { |column| column.key.to_s }
       attributes.each_with_object({}) do |(key, value), unknown|
         next unless key.is_a?(String)
 
-        name = attribute_for(model, key)
+        name = assigned_attribute(model, key, rules)
         unknown[name] = value if name && declared.exclude?(name)
       end
+    end
+
+    # The model attribute a kept header is assigned to under the rules, or nil.
+    def assigned_attribute(model, header, rules)
+      name = attribute_for(model, header)
+      name if name && allowed?(name, rules)
+    end
+
+    def allowed?(name, rules)
+      return rules[:allow].include?(name) if rules[:allow]
+      return rules[:ignore].exclude?(name) if rules[:ignore]
+
+      true
     end
 
     # The model attribute a header names, or nil (primary key excluded). Uses

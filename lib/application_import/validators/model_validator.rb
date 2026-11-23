@@ -56,7 +56,7 @@ module ApplicationImport
       def record_for(row)
         return row.record if row.record.is_a?(model)
 
-        RecordBuilder.build(model, row.attributes, definition.columns, assign_unknown: definition.file[:unknown_headers] == :assign,
+        RecordBuilder.build(model, row.attributes, definition.columns, assign: definition.assign_rules,
           generated: row.generated_keys)
       end
 

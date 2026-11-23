@@ -66,6 +66,12 @@ module ApplicationImport
       Readers.reader_class(format_for(extension) || file[:format])
     end
 
+    # Rules for assigning kept unknown headers to the record: nil unless
+    # file.unknown_headers is assign; else file.assign ({} = every matching attribute).
+    def assign_rules
+      file[:assign] || {} if file[:unknown_headers] == :assign
+    end
+
     def format_for(extension)
       file[:formats]&.find { |format| format.to_s == extension.to_s }
     end

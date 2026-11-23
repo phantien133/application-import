@@ -186,7 +186,7 @@ RSpec.describe ApplicationImport::HeaderMapper do
           map([ "Email", "Phone", "Note" ], file)
 
           expect(log.string).to include("INFO", "assigning unknown headers to HmUser as they are: Phone")
-          expect(log.string).to include("WARN", "unknown headers not matching a HmUser attribute, kept but not assigned: Note")
+          expect(log.string).to include("WARN", "unknown headers not assigned to HmUser (no such attribute, or not allowed by file.assign), kept: Note")
         end
 
         it "keeps extra cells by position without header row" do

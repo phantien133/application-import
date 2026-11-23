@@ -19,8 +19,9 @@ module ApplicationImport
   #                         and the handler to map explicitly, and in raw output
   #       assign         -> like keep, and the record builder assigns those matching a
   #                         model attribute (header downcased, spaces -> _) straight to
-  #                         the record, without cast or rules; the others are warned
-  #                         about (needs output.model)
+  #                         the record, without cast or rules, limited by file.assign
+  #                         allow / ignore (none: all, warned at load); the others are
+  #                         warned about (needs output.model)
   #       reject         -> file error unknown_headers
   #     blank headers are ignored (warned) by keep, assign and reject; cells under a
   #     blank header count as extra cells (file.extra_cells)
@@ -188,12 +189,18 @@ module ApplicationImport
       # Kept like keep; tells which headers will reach the record and warns about the rest.
       def assign_unknown(named)
         keep_unknown(named)
-        assigned, others = named.map(&:first).partition { |header| RecordBuilder.attribute_for(@mapper.model, header) }
-        @mapper.log(:info, "assigning unknown headers to #{@mapper.model.name} as they are: #{assigned.join(", ")}") if assigned.any?
-        if others.any?
-          @mapper.log(:warn, "unknown headers not matching a #{@mapper.model.name} attribute, kept but not assigned: " \
-                             "#{others.join(", ")}")
-        end
+        rules = @mapper.definition.assign_rules
+        assigned, others = named.map(&:first).partition { |header| RecordBuilder.assigned_attribute(@mapper.model, header, rules) }
+        log_assign(assigned, others)
+      end
+
+      def log_assign(assigned, others)
+        model = @mapper.model.name
+        @mapper.log(:info, "assigning unknown headers to #{model} as they are: #{assigned.join(", ")}") if assigned.any?
+        return if others.empty?
+
+        @mapper.log(:warn, "unknown headers not assigned to #{model} (no such attribute, or not allowed by file.assign), " \
+                           "kept: #{others.join(", ")}")
       end
 
       # Repeated unknown headers are compared like column headers (case, spaces).
