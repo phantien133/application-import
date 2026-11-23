@@ -112,7 +112,7 @@ module ApplicationImport
 
     def validators(stage)
       @validators ||= definition.validators.transform_values do |specs|
-        specs.map { |spec| spec[:class].new(definition, spec[:options]) }
+        specs.map { |spec| spec[:class].new(definition, spec[:options], context:, logger:) }
       end
       @validators.fetch(stage)
     end

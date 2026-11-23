@@ -111,3 +111,4 @@ on_error:
   default: abort                    # abort | skip, for codes not listed below
   allow: [ duplicate ]              # example
   skip: [ required, invalid_type ]  # example
+  row_errors: first                 # first (default): stop the row at its first failing check | all: collect every error

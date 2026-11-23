@@ -73,6 +73,32 @@ RSpec.describe ApplicationImport::Configs::ValidatorParser do
     ])
   end
 
+  describe "model options" do
+    it "keeps model, context and except" do
+      result = parse({ "row" => [ { "type" => "model", "model" => "User", "context" => "import", "except" => [ "uniqueness" ] } ] })
+
+      expect(result[:row].first[:options]).to eq(model: "User", context: "import", except: %i[ uniqueness ])
+      expect(errors).to be_empty
+    end
+
+    it "accepts no option and a single except name" do
+      expect([ parse({ "row" => [ { "type" => "model" } ] })[:row].first[:options],
+        parse({ "row" => [ { "type" => "model", "except" => "uniqueness" } ] })[:row].first[:options] ])
+        .to eq([ {}, { except: %i[ uniqueness ] } ])
+    end
+
+    it "reports unknown keys and invalid values" do
+      parse({ "row" => [ { "type" => "model", "model" => 1, "context" => "", "except" => [], "strict" => true } ] })
+
+      expect(errors).to contain_exactly(
+        "validators.row[0] has unknown keys: strict",
+        "validators.row[0].model must be a class name",
+        "validators.row[0].context must be a non-blank string",
+        "validators.row[0].except must be a non-empty list of names"
+      )
+    end
+  end
+
   it "checks unique_in_file options" do
     parse({ "rows" => [ { "type" => "unique_in_file", "keys" => [ "phone" ], "strict" => true, "case_sensitive" => "no" } ] })
 

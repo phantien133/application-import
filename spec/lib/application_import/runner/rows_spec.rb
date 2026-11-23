@@ -111,13 +111,12 @@ RSpec.describe ApplicationImport::Runner::Rows do
         "skip"
       end
 
-      it "finishes the row checks, then drops the row from rows checks, verify and write_rows" do
+      it "stops the row at its failing check and drops it from verify and write_rows" do
         result = run
 
         expect([ result.status, result.stats[:invalid] ]).to eq([ :completed_with_errors, 1 ])
         expect(events).to include([ :verify, [ 2, 4 ] ], [ :write_rows, [ 2, 4 ] ])
-        expect(events).to include([ :validate_row, 3 ])
-        expect(events).not_to include([ :validate_rows, 3 ])
+        expect(events).not_to include([ :validate_row, 3 ], [ :validate_rows, 3 ])
       end
     end
 
@@ -156,18 +155,94 @@ RSpec.describe ApplicationImport::Runner::Rows do
     end
   end
 
+  describe "on_error.row_errors" do
+    before do
+      stub_const("FirstCheck", validator(:row) { |row, _result| row.add_error(code: :one, message: "1").add_error(code: :two, message: "2") })
+      stub_const("SecondCheck", validator(:row) { |row, _result| row.add_error(code: :three, message: "3") })
+      stub_const("RowsCheck", validator(:rows) { |row, _result, _cache| row.add_error(code: :four, message: "4") })
+    end
+
+    def content
+      "email\na@x.io\nb@x.io\n"
+    end
+
+    def config
+      {
+        "validators" => { "row" => [ { "class" => "FirstCheck" }, { "class" => "SecondCheck" } ], "rows" => [ { "class" => "RowsCheck" } ] },
+        "on_error" => { "default" => "skip", "row_errors" => row_errors }
+      }
+    end
+
+    context "with first (default)" do
+      def row_errors
+        "first"
+      end
+
+      it "stops each row after the first check reporting errors, keeping that check's errors" do
+        result = run
+
+        expect(result.errors.map { |e| [ e.line, e.code ] }).to eq([ [ 2, :one ], [ 2, :two ], [ 3, :one ], [ 3, :two ] ])
+        expect(events).to eq([ [ :map_row, 2 ], [ :map_row, 3 ], [ :verify, [] ], [ :write_rows, [] ] ])
+      end
+
+      it "is the default" do
+        allow(self).to receive(:config).and_return(config.merge("on_error" => { "default" => "skip" }))
+
+        expect(run.errors.map(&:code)).to eq(%i[ one two one two ])
+      end
+    end
+
+    context "with all" do
+      def row_errors
+        "all"
+      end
+
+      it "runs every check of the row and collects all its errors before on_error" do
+        result = run
+
+        expect(result.errors.select { |e| e.line == 2 }.map(&:code)).to eq(%i[ one two three four ])
+        expect(events).to include([ :validate_row, 2 ], [ :validate_rows, 2 ])
+        expect(result.stats.values_at(:total, :invalid)).to eq([ 2, 2 ])
+      end
+
+      it "still applies the worst action once every check ran" do
+        allow(self).to receive(:config).and_return(config.merge("on_error" => { "default" => "abort", "row_errors" => "all" }))
+
+        result = run
+
+        expect([ result.status, result.errors.map(&:line).uniq ]).to eq([ :failed, [ 2 ] ])
+        expect(events).to include([ :validate_rows, 2 ])
+      end
+    end
+
+    context "with an allowed error under first" do
+      def config
+        { "validators" => { "row" => [ { "class" => "FirstCheck" }, { "class" => "SecondCheck" } ] },
+          "on_error" => { "allow" => %w[ one two ] } }
+      end
+
+      it "keeps the row but skips its remaining checks" do
+        result = run
+
+        expect([ result.status, result.errors.map(&:code).uniq ]).to eq([ :completed_with_errors, %i[ one two ] ])
+        expect(events).to include([ :write_rows, [ 2, 3 ] ])
+        expect(events).not_to include([ :validate_row, 2 ])
+      end
+    end
+  end
+
   describe "raised errors" do
     def config
       { "validators" => { "row" => [ { "class" => "RaisingValidator" } ] }, "on_error" => "skip" }
     end
 
-    it "turns a RowError into an error of its row and keeps running the other checks" do
+    it "turns a RowError into an error of its row, which then stops (row_errors: first)" do
       stub_const("RaisingValidator", validator(:row) { |row, _result| raise ApplicationImport::Errors::RowError.new("nope", line: row.line, column: :email, code: :nope) })
 
       result = run
 
       expect(result.errors.map { |e| [ e.line, e.column, e.code ] }).to eq([ [ 2, "email", :nope ], [ 3, "email", :nope ] ])
-      expect(events).to include([ :validate_row, 2 ])
+      expect(events).not_to include([ :validate_row, 2 ])
     end
   end
 

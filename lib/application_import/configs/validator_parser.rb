@@ -5,6 +5,28 @@ module ApplicationImport
       include Constants
 
       UNIQUE_IN_FILE_KEYS = %i[ keys case_sensitive ].freeze
+      MODEL_KEYS = %i[ model context except ].freeze
+
+      class << self
+        # Resolves validator classes per stage and the model of model validators (their
+        # own model or output.model, one of them required).
+        def resolve!(validators, output_model:, name:)
+          validators.each do |stage, specs|
+            specs.each_with_index do |spec, index|
+              spec[:class] = ClassResolver.resolve!(spec[:class], base: Constants::VALIDATOR_BASES.fetch(stage),
+                error: Errors::InvalidValidatorError)
+              resolve_model!(spec, output_model, "#{name}: validators.#{stage}[#{index}]") if spec[:type] == :model
+            end
+          end
+        end
+
+        private
+
+        def resolve_model!(spec, output_model, path)
+          model = spec[:options][:model] = ClassResolver.resolve!(spec[:options][:model], base: "ActiveRecord::Base")
+          raise Errors::ConfigError, "#{path}.model is required without output.model" unless model || output_model
+        end
+      end
 
       def initialize(config, column_keys, errors)
         @config = config
@@ -39,6 +61,7 @@ module ApplicationImport
       def options(type, spec, path)
         options = spec.except("type", "class").deep_symbolize_keys
         check_unique_in_file(options, path) if type == :unique_in_file
+        check_model(options, path) if type == :model
         options
       end
 
@@ -53,6 +76,21 @@ module ApplicationImport
       def custom(value, path)
         add_error("#{path}.class", "must be a class name") if value.nil?
         { type: nil, class: class_name(value, "#{path}.class") }
+      end
+
+      # model (class name, resolved later; falls back to output.model), context, except.
+      def check_model(options, path)
+        check_keys(options, MODEL_KEYS, path)
+        options[:model] = class_name(options[:model], "#{path}.model") if options.key?(:model)
+        check_context(options, "#{path}.context")
+        options[:except] = names(options[:except], "#{path}.except").map(&:to_sym) if options.key?(:except)
+      end
+
+      def check_context(options, path)
+        return unless options.key?(:context)
+
+        context = options[:context]
+        add_error(path, "must be a non-blank string") unless context.is_a?(String) && context.present?
       end
 
       def check_unique_in_file(options, path)

@@ -9,8 +9,10 @@ module ApplicationImport
     #      row in file order with the run's cache: a Hash, empty at start, shared by every
     #      rows check of this run, e.g. for seen keys or preloaded lookups; the caller's
     #      context stays read-only)
-    #   errors are settled at once: recorded in the result, on_error applied
-    #   (abort halts, skip drops the row, allow keeps it; the worst action wins).
+    #   on_error.row_errors: first (default) stops the row after the first check that
+    #   reports errors; all runs every check of the row and collects its errors. Then the
+    #   errors are settled at once: recorded in the result, on_error applied (abort
+    #   halts, skip drops the row, allow keeps it; the worst action wins).
     # verify then runs once on the kept rows (verify validators, handler.verify), and
     # write_rows writes them (handler.write with the writer for output.mode).
     #
@@ -33,10 +35,26 @@ module ApplicationImport
 
       def process_row(raw)
         row = build_row(raw)
-        map_row(row)
-        settle(row)
-        check_row(row) unless row.skipped?
-        check_rows(row) unless row.skipped?
+        row_checks(row).each do |check|
+          check.call
+          break if row.errors? && !definition.on_error.collect_all?
+        end
+        settle_all(row)
+      end
+
+      # The steps of one row, in order; each may report errors on the row.
+      def row_checks(row)
+        [ -> { map_row(row) }, *row_stage(row), *rows_stage(row) ]
+      end
+
+      def row_stage(row)
+        checks = validators(:row).map { |validator| -> { guard(row) { validator.call(row, result) } } }
+        checks << -> { guard(row) { handler.validate_row(row, result) } }
+      end
+
+      def rows_stage(row)
+        checks = validators(:rows).map { |validator| -> { guard(row) { validator.call(row, result, cache) } } }
+        checks << -> { guard(row) { handler.validate_rows(row, result, cache) } }
       end
 
       # A custom reader that never calls on_headers gets its headers mapped at the first row.
@@ -50,18 +68,6 @@ module ApplicationImport
       def map_row(row)
         row.attributes = handler.map_row(row.attributes, row)
         row.record = handler.build_record(row.attributes, row)
-      end
-
-      def check_row(row)
-        validators(:row).each { |validator| guard(row) { validator.call(row, result) } }
-        guard(row) { handler.validate_row(row, result) }
-        settle_all(row)
-      end
-
-      def check_rows(row)
-        validators(:rows).each { |validator| guard(row) { validator.call(row, result, cache) } }
-        guard(row) { handler.validate_rows(row, result, cache) }
-        settle_all(row)
       end
 
       def verify

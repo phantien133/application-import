@@ -4,7 +4,7 @@ module ApplicationImport
       include Checks
       include Constants
 
-      KEYS = %w[ default allow skip ].freeze
+      KEYS = %w[ default allow skip row_errors ].freeze
 
       def initialize(config, errors)
         @config = config.nil? ? DEFAULT_ON_ERROR : config
@@ -19,7 +19,8 @@ module ApplicationImport
         skip = codes("skip")
         overlap = allow & skip
         add_error("on_error", "lists codes in both allow and skip: #{overlap.join(", ")}") if overlap.any?
-        ErrorPolicy.new(default: action(@config.fetch("default", DEFAULT_ON_ERROR), "on_error.default"), allow:, skip:)
+        ErrorPolicy.new(default: action(@config.fetch("default", DEFAULT_ON_ERROR), "on_error.default"), allow:, skip:,
+          row_errors: one_of(@config.fetch("row_errors", DEFAULT_ROW_ERRORS), ROW_ERRORS, "on_error.row_errors") || :first)
       end
 
       private

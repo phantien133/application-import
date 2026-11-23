@@ -397,8 +397,102 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
       expect(outcome(validators: { "file" => [], "row" => [], "rows" => [], "verify" => [] })).to eq(ok(ann))
     end
 
+    describe "type: model" do
+      before do
+        ActiveRecord::Base.connection.create_table(:config_spec_users, temporary: true) { |t| t.string :email }
+        stub_const("ConfigSpecUser", Class.new(ApplicationRecord) do
+          self.table_name = "config_spec_users"
+          validates :email, format: { with: /@/ }, uniqueness: true
+        end)
+        ConfigSpecUser.create!(email: "a@x.io")
+      end
+
+      def model_run(content, **validator)
+        result = run(content, validators: { "row" => [ { "type" => "model", **validator } ] }, output: { "model" => "ConfigSpecUser" },
+          on_error: "skip")
+        [ result.status, result.errors.map { |e| [ e.line, e.code, e.column ] }, result.records ]
+      end
+
+      it "runs the model validations on each row (output.model)" do
+        expect(model_run("Email,Name\na@x.io,Ann\nnope,Bob\nb@x.io,Cy\n")).to eq([
+          :completed_with_errors, [ [ 2, :taken, "email" ], [ 3, :invalid, "email" ] ], [ { email: "b@x.io", name: "Cy" } ]
+        ])
+      end
+
+      it "ignores the kinds listed in except" do
+        expect(model_run("Email,Name\na@x.io,Ann\n", "except" => [ "uniqueness" ])).to eq(ok(ann))
+      end
+
+      it "requires a model" do
+        expect(config_error(validators: { "row" => [ { "type" => "model" } ] }))
+          .to eq("users: validators.row[0].model is required without output.model")
+      end
+    end
+
+    describe "type: unique_in_file" do
+      let(:content) { "Email,Name\na@x.io,Ann\nA@X.IO,Bob\na@x.io,Cy\n" }
+
+      def unique_run(**options)
+        run(content, validators: { "rows" => [ { "type" => "unique_in_file", "keys" => [ "email" ], **options } ] }, on_error: "skip")
+          .then { |result| [ result.errors.map { |e| [ e.line, e.code ] }, result.records.map { |r| r[:name] } ] }
+      end
+
+      it "flags repeated keys, case-sensitively by default" do
+        expect(unique_run).to eq([ [ [ 4, :duplicate ] ], %w[ Ann Bob ] ])
+      end
+
+      it "ignores case with case_sensitive: false" do
+        expect(unique_run("case_sensitive" => false)).to eq([ [ [ 3, :duplicate ], [ 4, :duplicate ] ], %w[ Ann ] ])
+      end
+
+      it "rejects unknown key columns" do
+        expect(config_error(validators: { "rows" => [ { "type" => "unique_in_file", "keys" => [ "phone" ] } ] }))
+          .to eq("users: validators.rows[0].keys references unknown columns: phone")
+      end
+    end
+
+    it "builds custom validators with their options, the run's context and logger" do
+      seen = []
+      stub_const("ContextValidator", Class.new(ApplicationImport::Validators::RowValidator) do
+        define_method(:call) { |_row, _result| seen << [ options, context, logger ] }
+      end)
+
+      ApplicationImport.run(definition(validators: { "row" => [ { "class" => "ContextValidator", "limit" => 3 } ] }),
+        StringIO.new("Email,Name\na@x.io,Ann\n"), filename: "u.csv", runner: "ConfigSpecRunner", logger:, context: { user_id: 7 })
+
+      expect(seen).to eq([ [ { limit: 3 }, { user_id: 7 }, logger ] ])
+    end
+
     it "rejects a stage that is not a list" do
       expect(config_error(validators: { "row" => {} })).to eq("users: validators.row must be a list")
+    end
+  end
+
+  describe "on_error.row_errors" do
+    before do
+      stub_const("TwoChecksA", Class.new(ApplicationImport::Validators::RowValidator) do
+        define_method(:call) { |row, _result| row.add_error(code: :a, message: "a") }
+      end)
+      stub_const("TwoChecksB", Class.new(ApplicationImport::Validators::RowValidator) do
+        define_method(:call) { |row, _result| row.add_error(code: :b, message: "b") }
+      end)
+    end
+
+    def codes(on_error)
+      run(validators: { "row" => [ { "class" => "TwoChecksA" }, { "class" => "TwoChecksB" } ] }, on_error:).errors.map(&:code)
+    end
+
+    it "stops each row at its first failing check when absent or first" do
+      expect([ codes("skip"), codes({ "default" => "skip" }), codes({ "default" => "skip", "row_errors" => "first" }) ])
+        .to all(eq(%i[ a ]))
+    end
+
+    it "collects every error of the row with all" do
+      expect(codes({ "default" => "skip", "row_errors" => "all" })).to eq(%i[ a b ])
+    end
+
+    it "rejects other values" do
+      expect(config_error(on_error: { "row_errors" => "none" })).to eq("users: on_error.row_errors must be one of first, all")
     end
   end
 

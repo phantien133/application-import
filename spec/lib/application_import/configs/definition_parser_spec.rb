@@ -159,6 +159,25 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
       ])
     end
 
+    it "resolves the model of a model validator, falling back to output.model" do
+      model = stub_const("ImportSpecUser", Class.new(ApplicationRecord))
+      own = parse({ "validators" => { "row" => [ { "type" => "model", "model" => "ImportSpecUser" } ] } })[:validators][:row].first
+      fallback = parse({ "validators" => { "row" => [ { "type" => "model" } ] }, "output" => { "model" => "ImportSpecUser" } })
+
+      expect([ own[:options][:model], fallback[:validators][:row].first[:options][:model], fallback[:output][:model] ])
+        .to eq([ model, nil, model ])
+    end
+
+    it "requires a model for a model validator without output.model" do
+      expect { parse({ "validators" => { "row" => [ { "type" => "model" } ] } }) }
+        .to raise_error(ApplicationImport::Errors::ConfigError, "users: validators.row[0].model is required without output.model")
+    end
+
+    it "raises InvalidClassError for a model validator model that is not an ActiveRecord model" do
+      expect { parse({ "validators" => { "row" => [ { "type" => "model", "model" => "String" } ] } }) }
+        .to raise_error(ApplicationImport::Errors::InvalidClassError, "String must inherit from ActiveRecord::Base")
+    end
+
     it "raises InvalidClassError for a model that is not an ActiveRecord model" do
       expect { parse({ "output" => { "mode" => "database", "model" => "String" } }) }
         .to raise_error(ApplicationImport::Errors::InvalidClassError, "String must inherit from ActiveRecord::Base")

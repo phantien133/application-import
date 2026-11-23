@@ -20,6 +20,22 @@ RSpec.describe ApplicationImport::Configs::OnErrorParser do
     expect(errors).to be_empty
   end
 
+  describe "row_errors" do
+    it "defaults to first in both forms" do
+      expect([ parse(nil).row_errors, parse("skip").row_errors, parse({ "default" => "skip" }).row_errors ]).to all(eq(:first))
+    end
+
+    it "accepts first and all" do
+      expect([ parse({ "row_errors" => "first" }).row_errors, parse({ "row_errors" => "all" }).row_errors ]).to eq(%i[ first all ])
+      expect(errors).to be_empty
+    end
+
+    it "rejects other values" do
+      expect(parse({ "row_errors" => "some" }).row_errors).to eq(:first)
+      expect(errors).to eq([ "on_error.row_errors must be one of first, all" ])
+    end
+  end
+
   it "defaults the mapping form to abort" do
     expect(parse({ "allow" => [ "duplicate" ] }).default).to eq(:abort)
   end

@@ -32,11 +32,7 @@ module ApplicationImport
     # file cannot set arbitrary model attributes; use them in an override if needed.
     def build_record(attributes, _row)
       model = definition.output[:model]
-      return unless model
-
-      record = model.new
-      record.assign_attributes(assignable(record, attributes))
-      record
+      RecordBuilder.build(model, attributes, definition.columns) if model
     end
 
     # Checks of one row on its own.
@@ -58,14 +54,5 @@ module ApplicationImport
     end
 
     def after_import(result); end
-
-    private
-
-    def assignable(record, attributes)
-      definition.columns.each_with_object({}) do |column, assignable|
-        key = column.key
-        assignable[key] = attributes[key] if attributes.key?(key) && record.respond_to?("#{key}=")
-      end
-    end
   end
 end

@@ -134,17 +134,8 @@ module ApplicationImport
       end
 
       def resolve_references(parsed)
-        resolve_validators(parsed[:validators])
         parsed[:output][:model] = ClassResolver.resolve!(parsed[:output][:model], base: "ActiveRecord::Base")
-      end
-
-      def resolve_validators(validators)
-        validators.each do |stage, specs|
-          specs.each do |spec|
-            spec[:class] = ClassResolver.resolve!(spec[:class], base: VALIDATOR_BASES.fetch(stage),
-              error: Errors::InvalidValidatorError)
-          end
-        end
+        ValidatorParser.resolve!(parsed[:validators], output_model: parsed[:output][:model], name: @name)
       end
 
       def resolve(name, base, error)
