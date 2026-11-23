@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Purpose
 
-`dwf` is an API-only Rails 8.1 base project (PostgreSQL, Redis cache, Solid Queue/Cable, RSpec, Kamal) used as the starting point for new apps.
+`import-demo` is an API-only Rails 8.1 base project (PostgreSQL, Redis cache, Solid Queue/Cable, RSpec, Kamal) used as the starting point for new apps.
 
 ## Stack
 
@@ -15,7 +15,7 @@ API-only Rails 8.1 on Ruby 3.4.13 (rbenv, `.ruby-version`). PostgreSQL 17 (`pg`)
 ```bash
 docker compose up -d db redis        # start Postgres + Redis (required for dev and specs)
 bin/rails db:prepare                 # create/migrate dev + test DBs
-bin/dev                              # Rails server on $PORT (13000 with the sample .env)
+bin/dev                              # Rails server on $PORT (23000 with the sample .env)
 docker compose up                    # alternative: run Rails in the `web` container too
 
 bin/rspec                            # all specs
@@ -31,14 +31,14 @@ bin/ci                               # local CI: setup, rubocop, bundler-audit, 
 ## Environment and ports
 
 - `.env` (git-ignored, copy from `.env.example`) is read both by `docker compose` (interpolation) and by Rails in development/test via the `dotenv` gem. Real ENV wins.
-- Port convention: defaults in code/compose are the standard ports (3000 / 5432 / 6379); `.env` publishes them on the host with a per-project prefix (`DWF_RAILS_PORT=13000`, `DWF_DB_PORT=15432`, `DWF_REDIS_PORT=16379`) so several projects run side by side. Keep this pattern for any new service.
+- Port convention: defaults in code/compose are the standard ports (3000 / 5432 / 6379); `.env` publishes them on the host with a per-project prefix (`IMPORT_DEMO_RAILS_PORT=23000`, `IMPORT_DEMO_DB_PORT=25432`, `IMPORT_DEMO_REDIS_PORT=26379`) so several projects run side by side. Keep this pattern for any new service.
 - Rails on the host reaches services via `DB_HOST/DB_PORT/DB_USERNAME/DB_PASSWORD` and `REDIS_URL` from `.env`; inside the `web` container compose overrides them to the `db:5432` / `redis:6379` service names. CI uses `DATABASE_URL`.
 - Rails listens on the same port inside and outside the container (`PORT`), and mailer `default_url_options` follows `PORT`.
 
 ## Architecture notes
 
-- **Cache**: `redis_cache_store` is configured once in `config/application.rb` (URL from `REDIS_CACHE_URL` → `REDIS_URL`, namespace `dwf:cache`, short timeouts, errors reported via `Rails.error` and treated as misses). Test env overrides with `:null_store`. There is no Solid Cache.
-- **Databases**: development/test use a single DB each (`dwf_development`, `dwf_test`). Production has `primary`, `queue` and `cable` databases (`config/database.yml`); queue/cable schemas live in `db/queue_schema.rb` and `db/cable_schema.rb`.
+- **Cache**: `redis_cache_store` is configured once in `config/application.rb` (URL from `REDIS_CACHE_URL` → `REDIS_URL`, namespace `import_demo:cache`, short timeouts, errors reported via `Rails.error` and treated as misses). Test env overrides with `:null_store`. There is no Solid Cache.
+- **Databases**: development/test use a single DB each (`import_demo_development`, `import_demo_test`). Production has `primary`, `queue` and `cable` databases (`config/database.yml`); queue/cable schemas live in `db/queue_schema.rb` and `db/cable_schema.rb`.
 - **Error handling**: `ApplicationError < StandardError` (`code`, `status`, `details`, `origin_error:` wrapping a Rails/library error and reusing its message; subclasses `ClientError`, `ForbiddenError`, `UnexpectedError`), concerns `ApiResponse` (`render_success`, `render_error`) and `ErrorHandling` (`rescue_from`; ActiveRecord errors share one handler: status from `config.action_dispatch.rescue_responses`, code from the class name; unmapped/5xx errors become a generic 500 and are reported). Files: `app/errors/`, `app/controllers/concerns/`. `rescue_from StandardError` must stay declared first (handlers are matched bottom-up). JSON health: `GET /health`.
 - **Dev container**: `Dockerfile.dev` + `bin/docker-dev-entrypoint` (bundle sync into the `bundle` volume, `db:prepare` before the server, stale pid cleanup). The production `Dockerfile` is separate and untouched by dev setup.
 

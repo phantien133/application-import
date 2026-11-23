@@ -17,7 +17,7 @@ require "action_cable/engine"
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
 
-module Dwf
+module ImportDemo
   class Application < Rails::Application
     # Initialize configuration defaults for originally generated Rails version.
     config.load_defaults 8.1
@@ -45,7 +45,7 @@ module Dwf
     # Cache errors are reported and treated as misses instead of raising.
     config.cache_store = :redis_cache_store, {
       url: ENV.fetch("REDIS_CACHE_URL") { ENV.fetch("REDIS_URL", "redis://localhost:6379/0") },
-      namespace: "dwf:cache",
+      namespace: "import_demo:cache",
       connect_timeout: 1,
       read_timeout: 0.5,
       write_timeout: 0.5,

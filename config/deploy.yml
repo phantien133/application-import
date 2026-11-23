@@ -1,8 +1,8 @@
 # Name of your application. Used to uniquely configure containers.
-service: dwf
+service: import-demo
 
 # Name of the container image (use your-user/app-name on external registries).
-image: dwf
+image: import-demo
 
 # Deploy to these servers.
 servers:
@@ -45,7 +45,7 @@ env:
     # When you start using multiple servers, you should split out job processing to a dedicated machine.
     SOLID_QUEUE_IN_PUMA: true
     # Rails.cache Redis instance, e.g. a Kamal redis accessory.
-    # REDIS_URL: redis://dwf-redis:6379/0
+    # REDIS_URL: redis://import-demo-redis:6379/0
 
     # Set number of processes dedicated to Solid Queue (default: 1)
     # JOB_CONCURRENCY: 3
@@ -54,7 +54,7 @@ env:
     # WEB_CONCURRENCY: 2
 
     # Match this to any external database server to configure Active Record correctly
-    # Use dwf-db for a db accessory server on same machine via local kamal docker network.
+    # Use import-demo-db for a db accessory server on same machine via local kamal docker network.
     # DB_HOST: 192.168.0.2
 
     # Log everything from Rails
@@ -71,7 +71,7 @@ aliases:
 # Use a persistent storage volume for sqlite database files and local Active Storage files.
 # Recommended to change this to a mounted volume path that is backed up off server.
 volumes:
-  - "dwf_storage:/rails/storage"
+  - "import_demo_storage:/rails/storage"
 
 # Bridge fingerprinted assets, like JS and CSS, between versions to avoid
 # hitting 404 on in-flight requests. Combines all files from new and old
