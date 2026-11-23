@@ -75,6 +75,13 @@ RSpec.describe ApplicationImport::Configuration do
     end
   end
 
+  it "loads example/_config.yml" do
+    configuration.load_file("lib/application_import/example/_config.yml")
+
+    expect([ configuration.config_path, configuration.defaults.dig("file", "max_rows") ])
+      .to eq([ Rails.root.join("config/imports"), 1000 ])
+  end
+
   describe "#load_settings" do
     it "keeps the built-in defaults when the settings file is absent" do
       allow(Rails.root).to receive(:join).and_call_original

@@ -136,14 +136,14 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     end
   end
 
-  it "parses configs/config.example.yml" do
+  it "parses example/users.yml" do
     stub_const("User", Class.new(ApplicationRecord))
     stub_const("Imports::UsersHandler", Class.new(ApplicationImport::Handler))
     stub_const("Imports::UsersFileChecker", Class.new(ApplicationImport::FileChecker))
     stub_const("Imports::Users::DomainValidator", Class.new(ApplicationImport::Validators::RowValidator))
     stub_const("Imports::Users::FileDateValidator", Class.new(ApplicationImport::Validators::FileValidator))
     stub_const("Imports::Users::ManagersExistValidator", Class.new(ApplicationImport::Validators::VerifyValidator))
-    config = YAML.safe_load_file(Rails.root.join("lib/application_import/configs/config.example.yml"))
+    config = YAML.safe_load_file(Rails.root.join("lib/application_import/example/users.yml"))
 
     result = described_class.new(:example, config).parse
 

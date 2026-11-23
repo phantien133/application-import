@@ -1,0 +1,17 @@
+# Copy to config/imports/_config.yml (optional; see users.yml for a definition). Read lazily on the first
+# ApplicationImport.configuration access, not at boot.
+# Flat keys, or scoped: `shared:` merged with the current `<env>:` section.
+shared:
+  config_path: config/imports     # where <name>.yml definitions live (relative to Rails.root)
+  defaults:                       # deep-merged under every definition; definition values win
+    file:
+      max_size: 10485760
+      encoding: "UTF-8"
+    output:
+      batch_size: 1000
+    on_error:
+      default: abort
+test:
+  defaults:
+    file:
+      max_rows: 1000

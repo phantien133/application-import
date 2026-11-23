@@ -1,3 +1,6 @@
+# Example import definition. Copy to config/imports/users.yml (or any path passed
+# to ApplicationImport.definition / run). Shared defaults come from _config.yml.
+
 handler: Imports::UsersHandler
 
 file:

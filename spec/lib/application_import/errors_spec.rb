@@ -4,7 +4,6 @@ RSpec.describe ApplicationImport::Errors do
       ApplicationImport::Errors::Error => StandardError,
       ApplicationImport::Errors::ConfigError => ApplicationImport::Errors::Error,
       ApplicationImport::Errors::FileError => ApplicationImport::Errors::Error,
-      ApplicationImport::Errors::CastError => ApplicationImport::Errors::Error,
       ApplicationImport::Errors::RowError => ApplicationImport::Errors::Error,
       ApplicationImport::Errors::RowsError => ApplicationImport::Errors::Error,
       ApplicationImport::Errors::InvalidClassError => ApplicationImport::Errors::ConfigError,
