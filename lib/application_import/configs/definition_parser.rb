@@ -49,9 +49,9 @@ module ApplicationImport
         check_keys(file, FILE_KEYS, "file")
         {
           checker: class_name(file["checker"], "file.checker"),
-          formats: formats(file.fetch("formats", DEFAULT_FORMATS)),
+          formats: formats(file["formats"]),
           name_pattern: regexp(file["name_pattern"], "file.name_pattern"),
-          max_size: integer(file.fetch("max_size", DEFAULT_MAX_SIZE), "file.max_size"),
+          max_size: optional_integer(file["max_size"], "file.max_size"),
           max_rows: integer(file.fetch("max_rows", DEFAULT_MAX_ROWS), "file.max_rows"),
           encoding: encoding(file.fetch("encoding", DEFAULT_ENCODING)),
           csv: reader_options(file["csv"], CSV_KEYS, "file.csv"),
@@ -59,7 +59,13 @@ module ApplicationImport
         }
       end
 
+      def optional_integer(value, path)
+        integer(value, path) unless value.nil?
+      end
+
       def formats(value)
+        return if value.nil?
+
         names(value, "file.formats").filter_map { |format| one_of(format, FORMATS, "file.formats") }.uniq
       end
 

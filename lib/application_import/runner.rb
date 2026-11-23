@@ -1,12 +1,14 @@
 module ApplicationImport
   class Runner
     include Constants
+    include Logging
 
     attr_reader :definition, :source, :context, :handler, :result
 
-    def initialize(definition, source, context: {})
+    def initialize(definition, source, context: {}, logger: ApplicationImport.logger)
       @definition = definition
       @source = source
+      @logger = logger
       @context = context.dup.freeze
       @handler = definition.handler_class.new(definition, @context)
       @result = Result.new
@@ -46,10 +48,14 @@ module ApplicationImport
     end
 
     def validate_file
-      definition.file_checker_class.new(definition).call(source, result)
+      file_checker.call(source, result)
       run_validators(:file, source)
       handler.validate_file(source, result)
       halt! if result.file_errors?
+    end
+
+    def file_checker
+      definition.file_checker_class.new(definition, logger:)
     end
 
     def process

@@ -49,6 +49,20 @@ RSpec.describe ApplicationImport::Runner do
     end)
   end
 
+  it "defaults the logger to ApplicationImport.logger and hands it to the file checker" do
+    loggers = []
+    ImportTestFileChecker.define_method(:call) { |_source, _result| loggers << logger }
+    runner.call
+
+    expect([ runner.logger, loggers ]).to eq([ ApplicationImport.logger, [ ApplicationImport.logger ] ])
+  end
+
+  it "uses an injected logger" do
+    logger = ActiveSupport::Logger.new(nil)
+
+    expect(described_class.new(definition, source, logger:).logger).to be(logger)
+  end
+
   it "builds the configured handler with the context and an empty result" do
     expect([ runner.handler.class, runner.handler.context, runner.result.errors ]).to eq([ ImportTestHandler, { user_id: 1 }, [] ])
   end

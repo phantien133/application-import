@@ -11,10 +11,17 @@ module ApplicationImport
     ENV_KEYS = %w[ shared development test production ].freeze
 
     attr_reader :config_path, :defaults
+    attr_writer :logger
 
     def initialize
       self.config_path = "config/imports"
       self.defaults = {}
+    end
+
+    # Set with `configure { |config| config.logger = ... }`; defaults to Rails.logger
+    # (read on each call so a swapped Rails.logger is picked up).
+    def logger
+      @logger || Rails.logger
     end
 
     # Relative paths resolve against Rails.root.

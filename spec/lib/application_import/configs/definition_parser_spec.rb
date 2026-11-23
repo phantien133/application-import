@@ -24,7 +24,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
 
     expect(result.except(:columns)).to eq(
       handler: ApplicationImport::Handler,
-      file: { checker: ApplicationImport::FileChecker, formats: [ :csv ], name_pattern: nil, max_size: 10_485_760, max_rows: 100_000,
+      file: { checker: ApplicationImport::FileChecker, formats: nil, name_pattern: nil, max_size: nil, max_rows: 100_000,
               encoding: "UTF-8", csv: {}, xlsx: {} },
       validators: { file: [], row: [], rows: [], verify: [] },
       output: { mode: :raw, model: nil, batch_size: 1000, upsert: nil },

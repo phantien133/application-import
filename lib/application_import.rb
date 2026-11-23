@@ -7,6 +7,10 @@ module ApplicationImport
       @configuration || CONFIGURATION_LOCK.synchronize { @configuration ||= Configuration.new.load_settings }
     end
 
+    def logger
+      configuration.logger
+    end
+
     def configure
       yield configuration
       clear_definitions!
@@ -34,9 +38,11 @@ module ApplicationImport
       !Rails.application.config.enable_reloading
     end
 
-    def run(definition_or_name, file, filename: nil, context: {}, runner: nil)
+    # `logger:` overrides the configured logger for this run only.
+    def run(definition_or_name, file, filename: nil, context: {}, runner: nil, logger: nil)
       definition = definition_or_name.is_a?(Definition) ? definition_or_name : definition(definition_or_name)
-      ClassResolver.resolve!(runner, base: Runner, default: Runner, error: Errors::InvalidRunnerError).new(definition, Source.build(file, filename:), context:).call
+      runner_class = ClassResolver.resolve!(runner, base: Runner, default: Runner, error: Errors::InvalidRunnerError)
+      runner_class.new(definition, Source.build(file, filename:), context:, logger: logger || self.logger).call
     end
   end
 end

@@ -28,12 +28,10 @@ module ApplicationImport
     ON_ERROR_MODES = %w[ abort skip ].freeze
     EMAIL_FORMAT = "email".freeze
 
-    DEFAULT_FORMATS = %w[ csv ].freeze
     DEFAULT_COLUMN_TYPE = "string".freeze
     DEFAULT_OUTPUT_MODE = "raw".freeze
     DEFAULT_ON_ERROR = "abort".freeze
     DEFAULT_ENCODING = "UTF-8".freeze
-    DEFAULT_MAX_SIZE = 10 * 1024 * 1024
     DEFAULT_MAX_ROWS = 100_000
     DEFAULT_BATCH_SIZE = 1000
   end

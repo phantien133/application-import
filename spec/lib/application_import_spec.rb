@@ -81,7 +81,13 @@ RSpec.describe ApplicationImport do
       result = described_class.run(definition, "users.csv", filename: "u.csv", context: { user_id: 1 })
 
       expect(result).to be_a(runner_class)
-      expect(result.args).to eq([ [ definition, source ], { context: { user_id: 1 } } ])
+      expect(result.args).to eq([ [ definition, source ], { context: { user_id: 1 }, logger: described_class.logger } ])
+    end
+
+    it "passes a per-run logger" do
+      logger = ActiveSupport::Logger.new(nil)
+
+      expect(described_class.run(definition, "users.csv", filename: "u.csv", logger:).args.last[:logger]).to be(logger)
     end
 
     it "loads the definition when given a name" do

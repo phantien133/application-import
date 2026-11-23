@@ -22,6 +22,22 @@ RSpec.describe ApplicationImport::Configuration do
     end
   end
 
+  describe "#logger" do
+    it "defaults to the current Rails.logger" do
+      other = ActiveSupport::Logger.new(nil)
+      allow(Rails).to receive(:logger).and_return(other)
+
+      expect(configuration.logger).to be(other)
+    end
+
+    it "is configurable through ApplicationImport.configure" do
+      logger = ActiveSupport::Logger.new(nil)
+      ApplicationImport.configure { |config| config.logger = logger }
+
+      expect(ApplicationImport.logger).to be(logger)
+    end
+  end
+
   describe "#defaults=" do
     it "stringifies and deep-freezes the mapping" do
       configuration.defaults = { file: { max_size: 1 } }
