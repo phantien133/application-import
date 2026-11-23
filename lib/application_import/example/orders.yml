@@ -1,0 +1,68 @@
+# Scenario: a European spreadsheet export saved record by record.
+# - semicolon CSV in Windows-1252, numbers like 1.234,50 (file.numbers)
+# - output.mode save: record.save per row, so model callbacks run
+# - lenient error policy: bad rows are skipped, all their errors collected, with a cap
+
+file:
+  formats: [ csv ]
+  name_pattern: '\Aorders_.*\.csv\z'
+  max_size: 5242880
+  encoding: "Windows-1252"     # converted to UTF-8 while reading; a BOM would win
+  csv:
+    col_sep: ";"
+  numbers:                     # default for every integer / decimal column
+    decimal_separator: ","
+    thousands_separator: "."   # grouping must be exact: 1.234,5 ok, 1.5 or 12.34 rejected
+
+columns:
+  reference:
+    header: "Référence"
+    required: true
+    format: '\AORD-\d{6}\z'
+  ordered_on:
+    header: "Date"
+    type: date
+    date_format: "%d/%m/%Y"
+    required: true
+  quantity:
+    header: "Quantité"
+    type: integer              # uses thousands_separator only
+    min: 1
+  unit_price:
+    header: "Prix unitaire"
+    type: decimal
+    min: 0
+  weight_kg:
+    header: "Poids"
+    type: decimal
+    decimal_separator: "."     # this column overrides file.numbers
+    thousands_separator: " "   # 1 234.5
+
+transformers:
+  - type: context
+    key: shop_id
+    to: shop_id
+
+validators:
+  row:
+    - type: model              # Order's validations except those listed
+      skip: [ check_stock ]    # a `validate :check_stock` method: not run in this step,
+                               # record.save still runs it when writing
+  rows:
+    - type: unique_in_file
+      keys: [ reference ]
+  verify:
+    - class: Imports::Orders::TotalsValidator   # < ApplicationImport::Validators::VerifyValidator
+
+output:
+  mode: save
+  model: Order
+  batch_size: 200              # rows per write call, each in its own transaction
+  save:
+    context: import            # record.save(context: :import)
+
+on_error:
+  default: skip                # every row error drops the row ...
+  allow: [ not_included ]      # ... except these, which keep it (reported only)
+  row_errors: all              # collect every error of a row, not just the first
+  max_errors: 500              # more than 500 row errors -> too_many_errors, stop

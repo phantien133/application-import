@@ -22,4 +22,18 @@ RSpec.describe ApplicationImport::Casters::IntegerCaster do
   it "names the type" do
     expect(caster.type_name).to eq("an integer")
   end
+
+  describe "with a thousands separator" do
+    subject(:caster) { build_caster(type: :integer, thousands_separator: ".") }
+
+    it "accepts groups of three digits, and digits without separator" do
+      expect([ "1.234", "1.234.567", "-12.345", "1234", "7" ].map { |value| caster.call(value) }).to eq([ 1234, 1_234_567, -12_345, 1234, 7 ])
+    end
+
+    it "rejects misplaced separators instead of misreading them" do
+      [ "1.5", "1.23", "12.3456", ".123", "1..234", "1,5" ].each do |value|
+        expect { caster.call(value) }.to raise_error(ArgumentError)
+      end
+    end
+  end
 end

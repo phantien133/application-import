@@ -24,6 +24,7 @@ module ApplicationImport
         pending << row unless row.skipped?
         return if pending.size < (definition.output[:batch_size] || Constants::DEFAULT_BATCH_SIZE)
 
+        debug { "stream: writing a batch of #{pending.size} rows (up to line #{row.line})" }
         write_batch(unwritten_rows)
       end
 

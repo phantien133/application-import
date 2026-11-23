@@ -1,0 +1,48 @@
+# Scenario: a strict partner file in its own format.
+# - custom reader and file checker; custom caster for one column
+# - exact headers: every column present (require_all_headers), nothing else (reject)
+# - any file problem rejects the whole file; the first bad row aborts
+
+handler: Imports::MembersHandler   # e.g. map_row / verify / after_import overrides
+
+file:
+  checker: Imports::MembersFileChecker   # < ApplicationImport::FileChecker
+  reader: Imports::FixedWidthReader      # < ApplicationImport::Readers::Base (#each_record)
+  formats: [ csv ]                       # format must be in formats
+  name_pattern: '\Amembers_\d{4}-\d{2}\.csv\z'
+  max_size: 1048576
+  require_all_headers: true
+  unknown_headers: reject
+  extra_cells: reject
+
+columns:
+  member_no:
+    header: "MEMBER_NO"
+    header_pattern: '\Amember[ _-]?(no|number)\z'   # also matches "Member number"
+    type: integer
+    required: true
+  name:
+    header: "NAME"
+    aliases: [ "FULL_NAME" ]
+    required: true
+  tier:
+    header: "TIER"
+    inclusion: [ gold, silver, bronze ]
+  card:
+    header: "CARD"
+    caster: Imports::CardNumberCaster    # < ApplicationImport::Casters::Base
+  joined_at:
+    header: "JOINED_AT"
+    type: datetime
+    date_format: "%Y%m%d%H%M%S"
+
+validators:
+  rows:
+    - type: unique_in_file
+      keys: [ member_no ]
+
+output:
+  model: Member
+  transaction: true            # an abort rolls back everything written
+
+on_error: abort                # default: the first row error stops the import

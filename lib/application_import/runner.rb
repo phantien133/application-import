@@ -49,17 +49,21 @@ module ApplicationImport
 
     private
 
+    STEPS = %i[ validate_file open_reader read_headers process verify write_rows ].freeze
+
+    # A Runner subclass can override run_steps (or single steps) to add or reorder.
     def run_steps
       check_streaming!
-      step { validate_file }
-      step { open_reader }
-      step { read_headers }
-      step { process }
-      step { verify } unless streaming?
-      step { write_rows }
+      debug { "start #{source.filename}: #{settings_summary}" }
+      STEPS.each do |name|
+        next if name == :verify && streaming?
+
+        step(name) { send(name) }
+      end
     end
 
-    def step
+    def step(name = nil)
+      debug { "step #{name}" } if name
       yield
     rescue Errors::FileError, Errors::RowError, Errors::RowsError => e
       handle_error(e)

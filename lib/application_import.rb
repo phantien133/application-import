@@ -27,10 +27,16 @@ module ApplicationImport
     # Loads outside the cache's lock (YAML IO, class resolution, schema reads must not
     # serialize other loads or deadlock on a nested call); the first stored wins.
     def definition(source)
-      return Definition.load(source) unless cache_definitions?
+      return load_definition(source) unless cache_definitions?
 
       key = Definition.locate(source).last.to_s
-      DEFINITIONS.fetch(key) { DEFINITIONS.put_if_absent(key, Definition.load(source)) || DEFINITIONS[key] }
+      DEFINITIONS.fetch(key) { DEFINITIONS.put_if_absent(key, load_definition(source)) || DEFINITIONS[key] }
+    end
+
+    def load_definition(source)
+      path = Definition.locate(source).last
+      logger&.debug { "[ApplicationImport] loading definition #{source} from #{path}" }
+      Definition.load(source)
     end
 
     def clear_definitions!

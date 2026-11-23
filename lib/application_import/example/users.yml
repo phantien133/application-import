@@ -1,160 +1,189 @@
-# Example import definition. Copy to config/imports/users.yml (or any path passed
-# to ApplicationImport.definition / run). Shared defaults come from _config.yml.
+# Full reference: every definition section with its options and defaults.
+# Copy to config/imports/users.yml (the name is the import name, :users). Shared defaults
+# come from _config.yml (deep-merged under this file, values here win). Scenario examples:
+# orders.yml (localized numbers, save mode, error policy), products.yml (streaming upsert,
+# assigning unknown headers), contacts.yml (no header row, raw output, transformers),
+# members.yml (exact headers, custom reader / checker / caster).
+#
+# Run: ApplicationImport.run(:users, file, context: { user_id: 1 }, dry_run: false)
+# (dry_run: every step, writes included, then rolled back).
+#
+# Pipeline per data row: cast + column rules -> transformers -> mapper
+# -> handler.map_row -> handler.build_record -> row validators -> handler.validate_row
+# -> rows validators -> handler.validate_rows. Then, on the kept rows: verify validators
+# -> handler.verify -> handler.write. handler.after_import always runs last.
 
-handler: Imports::UsersHandler
+handler: Imports::UsersHandler   # < ApplicationImport::Handler (default: the base Handler)
 
 file:
-  checker: Imports::UsersFileChecker
+  # --- Checks before reading (FileChecker; an unset check is skipped with a warning) ---
+  checker: Imports::UsersFileChecker   # < ApplicationImport::FileChecker (default: FileChecker)
+  formats: [ csv ]                     # allowed extensions -> invalid_format
+  name_pattern: '\Ausers_\d{8}\.csv\z' # regexp on the filename -> invalid_name
+  max_size: 10485760                   # bytes -> too_large
 
-  format: csv          # built-in reader: csv (default) | xlsx (not implemented yet)
-  # reader: Imports::UsersReader   # custom reader (< ApplicationImport::Readers::Base), overrides format
-  formats: [ csv, xlsx ]
-  name_pattern: '\Ausers_\d{8}\.(csv|xlsx)\z'
-  max_size: 10485760
-  encoding: "UTF-8"   # a BOM (UTF-8/UTF-16) overrides it
-  headers: true       # false: no header row, cells map to columns in the order below
-  require_all_headers: false   # true: every column below must have a header (default: only required ones)
-  unknown_headers: skip   # headers not in columns: skip (default) | keep (attributes keyed by header)
-                          # | assign (keep + set matching output.model attributes as read, no cast) | reject (error)
-  # exact headers (all columns, nothing extra): require_all_headers: true + unknown_headers: reject
-  extra_cells: warn       # cells beyond the headers (kept in row.raw): warn (default) | ignore | reject (file error, halts)
-  csv:                       # CSV.new options; encoding is file.encoding, not here
+  # --- Reading ---
+  format: csv          # csv (default) | xlsx (reader not implemented yet); must be in formats
+  # reader: Imports::UsersReader   # < ApplicationImport::Readers::Base, overrides format
+  encoding: "UTF-8"    # default UTF-8; a BOM (UTF-8/16/32) in the file wins
+  csv:                 # validated CSV.new options (encoding is file.encoding, not here)
     col_sep: ","
     quote_char: '"'
-    # row_sep: "\r\n"        # default: auto-detect
+    # row_sep: "\r\n"  # default: auto-detect; newlines are normalized
     liberal_parsing: false
-    strip: true               # or one character to strip, e.g. "*"
-    skip_lines: '\A#'         # regexp: skip comment lines
-    max_field_size: 10000
-    # passthrough:            # handed to CSV.new as-is, NOT validated, overrides the above
-    #   nil_value: ""
-  xlsx:
-    sheet: 0
-columns:
+    strip: true        # true, or one character to strip, e.g. "*"
+    skip_lines: '\A#'  # regexp: lines skipped before parsing (comments)
+    max_field_size: 10000   # default 1048576: an unclosed quote cannot swallow the file
+    # passthrough:     # other CSV.new options, as-is (not validated), applied last;
+    #   nil_value: ""  # options the reader manages (headers, converters, skip_lines...) are rejected
+  # xlsx:
+  #   sheet: 0
+
+  # --- Headers and cells ---
+  headers: true                # false: no header row, cells map to columns by position
+  require_all_headers: false   # true: every column needs its header (default: required ones only)
+  unknown_headers: skip        # headers not in columns:
+                               #   skip (default) dropped
+                               #   keep    kept as String keys (row.attributes["Note"]), never
+                               #           assigned to the record: map them explicitly or use raw output
+                               #   assign  keep + assign those naming an output.model attribute,
+                               #           as read (no cast); see file.assign
+                               #   reject  file error, the import stops
+  # assign:                    # with unknown_headers: assign only, exactly one of:
+  #   allow: [ nickname ]      #   only these attributes
+  #   ignore: [ admin ]        #   every matching attribute but these
+  #                            # none: every matching attribute, with a warning at config load
+  extra_cells: warn            # cells beyond the headers (kept in row.raw):
+                               # warn (default) | ignore | reject (file error, halts)
+  # numbers:                   # default separators of integer / decimal columns
+  #   decimal_separator: ","   # (a column's own separators win); see orders.yml
+  #   thousands_separator: "."
+
+columns:                       # key: snake_case attribute name; options all optional
   email:
-    header: "Email"
+    header: "Email"            # default: the key
     aliases: [ "E-mail", "Mail" ]
     header_pattern: '\Ae-?mail( address)?\z'   # regexp (or list), case-insensitive; names win
-    type: string
-    required: true
+    type: string               # string (default) | integer | decimal | boolean | date | datetime
+    required: true             # blank -> required
     max_length: 255
-    format: email
-
+    format: email              # email, or a regexp
   name:
     header: "Name"
     min_length: 2
     max_length: 100
-
   age:
     header: "Age"
     type: integer
     min: 0
     max: 150
-
   balance:
     header: "Balance"
     type: decimal
     min: 0
-
   active:
     header: "Active"
-    type: boolean
-
+    type: boolean              # true t yes y 1 / false f no n 0 (case-insensitive)
   phone:
     header: "Phone"
-    caster: Imports::PhoneCaster   # custom caster (< ApplicationImport::Casters::Base) instead of the type's
+    caster: Imports::PhoneCaster   # < ApplicationImport::Casters::Base, replaces the type's caster
   role:
     header: "Role"
-    # inclusion is checked on the value in the file, before the map transformer below
-    # (which already rejects unknown labels with strict: true)
+    # Column rules check the value as it is in the file, before transformers.
     inclusion: [ "Quản trị", "Thành viên", admin, member, guest ]
-
   joined_on:
     header: "Joined"
     type: date
-    date_format: "%d/%m/%Y"   # strict: the whole value must match
+    date_format: "%d/%m/%Y"    # strict: the whole value must match
     min: "2000-01-01"
-
   last_login_at:
     header: "Last login"
     type: datetime
-    # no date_format: ISO 8601, else lenient Time.zone.parse (needs year, month, day)
-    # with a warning once per run — set date_format to parse exactly
+    # No date_format: ISO 8601, else lenient Time.zone.parse (needs year, month and day)
+    # with a warning once per run. Set date_format to parse exactly.
 
-# --- Transformers ---------------------------------------------------------------
-# Run for each row after cast + column rules, in order, each returning attributes to
-# merge. Built-in `type` (concat, default, map, normalize, context) or your `class`
-# (< ApplicationImport::Transformers::Base, call(attributes, row) -> Hash).
+# Row error codes of these checks: required, invalid_type (cast failed), too_long,
+# too_short, too_small, too_big, invalid_format, not_included.
+
+# Run in order on each row after cast + column rules; each returns attributes to merge.
+# Built-in `type`, or `class` (< ApplicationImport::Transformers::Base,
+# call(attributes, row) -> Hash, other keys are its options).
 transformers:
-  - type: normalize
+  - type: normalize            # String values only; strip | downcase | upcase | squish
     attributes: [ email ]
     with: [ strip, downcase ]
-  - type: default
+  - type: default              # blank -> value
     attribute: role
     value: member
-  - type: map
+  - type: map                  # values through a table (blank left alone)
     attribute: role
     values: { "Quản trị": admin, "Thành viên": member }
+    # to: role_code            # default: the attribute itself
+    # case_sensitive: false    # default
+    # strict: false            # true: a value not in the table -> row error not_mapped
   - type: concat
     from: [ name, email ]
     to: label
     separator: " - "
-  - type: context
+  - type: context              # a value of the run's context
     key: user_id
     to: created_by_id
   # - class: Imports::Users::SlugTransformer
   #   source: name
 
-# --- Mapper -----------------------------------------------------------------------
-# One mapper, after the transformers, before handler.map_row and the validators:
-# turns the attributes into the ones the record gets. `type: rename` or your `class`
-# (< ApplicationImport::Mappers::Base, call(attributes, row) -> Hash).
+# One mapper after the transformers: the attributes the record gets.
+# `type: rename` or `class` (< ApplicationImport::Mappers::Base).
 mapper:
   type: rename
   attributes: { joined_on: created_on }
-  # only: true    # keep only the renamed attributes
+  # only: true                 # keep only the renamed attributes
 
-# --- Validators ----------------------------------------------------------------
-# Run after the per-column checks. Either `type` (registered validator) or
-# `class` (any class answering .call or
-#   scope: file (default) -> .call(rows, errors, options), rows = still-valid rows
-#   scope: row            -> .call(row, options)
+# Stages: file (before reading), row (each row), rows (each row, across rows: cache),
+# verify (once, on all kept rows; not with output.stream). Built-in `type` or `class`
+# (< Validators::FileValidator / RowValidator / RowsValidator / VerifyValidator).
 validators:
   file:
     - class: Imports::Users::FileDateValidator
   row:
-    - type: model
-      model: User
-      context: import
-      except: [ uniqueness ]
+    - type: model              # the model's own validations (record.valid?)
+      model: User              # default: output.model
+      context: [ create, import ]   # a name or a list; a custom context replaces :create
+      skip: [ uniqueness ]     # not run in this step (kinds or validate method names);
+                               # same as `import_skip :uniqueness, on: :users` on the model
+      # except: [ length ]     # run, but their errors are ignored
     - class: Imports::Users::DomainValidator
       allowed_domains: [ example.com ]
   rows:
-    - type: unique_in_file
+    - type: unique_in_file     # -> duplicate
       keys: [ email ]
-      case_sensitive: false
+      case_sensitive: false    # default true
     - type: unique_in_file
-      keys: [ name, created_on ]   # names after the mapper (joined_on was renamed); a missing key fails the run
+      keys: [ name, created_on ]   # names after the mapper; a key missing from the rows fails the run
   verify:
     - class: Imports::Users::ManagersExistValidator
 
 output:
-  mode: bulk              # bulk (default with model: activerecord-import) | save (record.save each) | raw (no DB)
-  model: User
-  batch_size: 1000        # rows per Model.import call
-  transaction: true       # one transaction for the whole write; an abort rolls it back
-  upsert:                 # bulk only -> on_duplicate_key_update
+  mode: bulk                   # bulk (default with model: activerecord-import)
+                               # | save (record.save each) | raw (no DB, default without model)
+  model: User                  # a concrete ActiveRecord model; required by bulk and save
+  batch_size: 1000             # rows per write call (default 1000)
+  transaction: true            # each write call in a transaction (default true)
+  stream: false                # true: write by batch_size while reading; see products.yml
+  upsert:                      # bulk only -> on_duplicate_key_update
     conflict_target: [ email ]
     update: [ name, age, active ]
-  import:                 # bulk only: any activerecord-import option, as-is (not validated)
-    validate: true
-  # save:                 # save only: options for record.save, as-is (e.g. validate: false)
-# Row-level errors (file-level errors always stop the import):
-#   abort: record the error and stop; skip: record it, drop the row, continue;
-#   allow: record it, keep the row, continue.
-# Short form: `on_error: abort` (or skip) sets the default for every code.
+  import:                      # bulk only: validate validate_with_context validate_uniqueness
+    validate: true             # timestamps recursive batch_size all_or_none
+                               # on_duplicate_key_update / _ignore (not with upsert)
+  # save:                      # save only: validate context touch; see orders.yml
+
+# Row errors: abort (record, stop the import) | skip (record, drop the row, go on)
+# | allow (record, keep the row). File errors always stop the import.
+# Short form: `on_error: skip` sets the default.
 on_error:
-  default: abort                    # abort | skip, for codes not listed below
-  allow: [ duplicate ]              # example
-  skip: [ required, invalid_type ]  # example
-  row_errors: first                 # first (default): stop the row at its first failing check | all: collect every error
+  default: abort               # abort (default) | skip, for codes not listed
+  allow: [ duplicate ]
+  skip: [ required, invalid_type ]
+  row_errors: first            # first (default): a row stops at its first failing check
+                               # | all: run every check, collect every error
+  # max_errors: 100            # default none; more row errors -> too_many_errors, stop

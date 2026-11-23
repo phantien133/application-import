@@ -51,9 +51,17 @@ module ApplicationImport
       def skip_validations(klass, names, imports: [])
         rule = { names: names.map(&:to_sym).sort, imports: imports.map(&:to_sym).sort }.freeze
         APPLIED.compute_if_absent([ klass, rule ]) do
+          log_skip(klass, rule)
           klass.validators.each { |validator| skip_validator(klass, validator, rule) }
           skip_methods(klass, rule, rule[:names])
           true
+        end
+      end
+
+      def log_skip(klass, rule)
+        ApplicationImport.logger&.debug do
+          "[ApplicationImport] #{klass.name}: skipping #{rule[:names].join(", ")} in the model validator of " \
+            "#{rule[:imports].empty? ? "every import" : rule[:imports].join(", ")}"
         end
       end
 

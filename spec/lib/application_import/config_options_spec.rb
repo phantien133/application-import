@@ -639,6 +639,18 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
         .to raise_error(ApplicationImport::Errors::InvalidCasterError)
     end
 
+    it "parses localized numbers with file.numbers or column separators" do
+      columns = { "price" => { "header" => "Price", "type" => "decimal" }, "qty" => { "header" => "Qty", "type" => "integer", "thousands_separator" => " " } }
+      result = run("Price;Qty\n1.234,5;1 200\n", columns:, file: { "csv" => { "col_sep" => ";" }, "numbers" => { "decimal_separator" => ",", "thousands_separator" => "." } })
+
+      expect(result.records).to eq([ { price: BigDecimal("1234.5"), qty: 1200 } ])
+    end
+
+    it "rejects invalid file.numbers" do
+      expect(config_error(file: { "numbers" => { "decimal_separator" => ",", "thousands_separator" => ",", "other" => 1 } }))
+        .to eq("users: file.numbers has unknown keys: other; file.numbers decimal_separator and thousands_separator must differ")
+    end
+
     it "turns blank cells into nil" do
       expect(run("Email,Name\na@x.io,\n").records).to eq([ { email: "a@x.io", name: nil } ])
     end

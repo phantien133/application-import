@@ -1,0 +1,60 @@
+# Scenario: a large catalogue feed upserted while it is read.
+# - output.stream: kept rows are written every batch_size rows and their records
+#   released, so memory stays flat. No verify stage (rows are written before it),
+#   and a transaction only covers one batch: an abort keeps earlier batches.
+# - unknown_headers: assign: extra headers naming Product attributes are set as read
+
+file:
+  formats: [ csv ]
+  max_size: 104857600
+  unknown_headers: assign      # needs output.model
+  assign:
+    ignore: [ admin_note, price_cents ]   # never set these from the file
+  extra_cells: ignore
+
+columns:
+  sku:
+    header: "SKU"
+    required: true
+    max_length: 32
+  name:
+    header: "Name"
+    required: true
+  price_cents:
+    header: "Price"
+    type: integer
+    min: 0
+  available:
+    header: "In stock"
+    type: boolean
+
+transformers:
+  - type: normalize
+    attributes: [ sku ]
+    with: [ strip, upcase ]
+  - type: default
+    attribute: available
+    value: true
+
+validators:
+  row:
+    - type: model
+      except: [ uniqueness ]   # validations run, their taken errors are ignored: the upsert
+                               # updates existing SKUs
+  rows:
+    - type: unique_in_file     # the same SKU twice in one upsert batch would fail in SQL
+      keys: [ sku ]
+      case_sensitive: false
+
+output:
+  model: Product               # mode defaults to bulk with a model
+  stream: true
+  batch_size: 2000
+  upsert:
+    conflict_target: [ sku ]   # needs a unique index
+    update: [ name, price_cents, available ]
+  import:
+    validate: false            # already validated by the model validator above
+    timestamps: true
+
+on_error: skip                 # short form: default skip for every code

@@ -4,7 +4,8 @@ module ApplicationImport
       include Checks
       include Constants
 
-      KEYS = %w[ header aliases header_pattern type caster required max_length min_length min max format inclusion date_format ].freeze
+      KEYS = (%w[ header aliases header_pattern type caster required max_length min_length min max format inclusion
+        date_format ] + NumberFormat::KEYS).freeze
       KEY_FORMAT = /\A[a-z_][a-z0-9_]*\z/
 
       def initialize(config, errors)
@@ -48,7 +49,7 @@ module ApplicationImport
           inclusion: inclusion(options["inclusion"], "#{path}.inclusion"),
           date_format: date_format(options["date_format"], type, "#{path}.date_format")
         }
-        parsed.merge(lengths(options, type, path), bounds(options, type, path)).compact
+        parsed.merge(typed_options(options, type, path)).compact
       end
 
       def lengths(options, type, path)
@@ -117,6 +118,21 @@ module ApplicationImport
         rescue RegexpError => e
           add_error(path, "is not a valid regexp: #{e.message}")
         end.presence
+      end
+
+      # Options whose meaning depends on the column type.
+      def typed_options(options, type, path)
+        lengths(options, type, path).merge(bounds(options, type, path), number_format(options, type, path))
+      end
+
+      # Separators on integer (thousands only) and decimal columns.
+      def number_format(options, type, path)
+        format = NumberFormat.parse(options, path, @errors)
+        allowed = { integer: %i[ thousands_separator ], decimal: %i[ decimal_separator thousands_separator ] }.fetch(type, [])
+        (format.keys - allowed).each do |key|
+          add_error("#{path}.#{key}", "is not allowed on #{type || "this"} columns")
+        end
+        format.slice(*allowed)
       end
 
       def check_duplicate_headers(columns)

@@ -1,6 +1,11 @@
 RSpec.describe ApplicationImport::HeaderMapper do
   let(:log) { StringIO.new }
-  let(:logger) { ActiveSupport::Logger.new(log).tap { |l| l.formatter = ->(severity, _, _, msg) { "#{severity} #{msg}\n" } } }
+  let(:logger) do
+    ActiveSupport::Logger.new(log).tap do |l|
+      l.formatter = ->(severity, _, _, msg) { "#{severity} #{msg}\n" }
+      l.level = :info
+    end
+  end
   let(:result) { ApplicationImport::Result.new }
 
   def definition(file = {})

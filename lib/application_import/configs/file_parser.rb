@@ -6,7 +6,7 @@ module ApplicationImport
       include Constants
 
       KEYS = %w[ checker formats name_pattern max_size format reader encoding headers require_all_headers
-        unknown_headers assign extra_cells csv xlsx ].freeze
+        unknown_headers assign extra_cells numbers csv xlsx ].freeze
       XLSX_KEYS = %w[ sheet ].freeze
       HOST_ALIASES = %w[ locale external filesystem internal ].freeze
 
@@ -51,8 +51,16 @@ module ApplicationImport
           require_all_headers: boolean(@file.fetch("require_all_headers", false), "file.require_all_headers"),
           unknown_headers: one_of(@file.fetch("unknown_headers", DEFAULT_UNKNOWN_HEADERS), UNKNOWN_HEADERS, "file.unknown_headers"),
           extra_cells: one_of(@file.fetch("extra_cells", DEFAULT_EXTRA_CELLS), EXTRA_CELLS, "file.extra_cells"),
-          assign: assign_rules
+          assign: assign_rules,
+          numbers: numbers
         }
+      end
+
+      # Default number separators of integer / decimal columns (a column's own win).
+      def numbers
+        options = mapping(@file["numbers"], "file.numbers")
+        check_keys(options, NumberFormat::KEYS, "file.numbers")
+        NumberFormat.parse(options, "file.numbers", @errors).presence
       end
 
       # file.assign (with unknown_headers: assign): { allow: [...] } or { ignore: [...] },

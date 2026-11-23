@@ -74,8 +74,13 @@ module ApplicationImport
         raise invalid("#{encoding} needs a BOM to be read", encoding) if BOM_ONLY.include?(encoding)
         raise invalid("#{encoding} cannot be converted to UTF-8", encoding) unless self.class.convertible?(encoding)
 
+        log_reading(encoding, bom)
         write(file, encoding, head.byteslice((bom&.bytesize || 0)..), input)
         [ encoding, !bom.nil? ]
+      end
+
+      def log_reading(encoding, bom)
+        debug { "reading as #{encoding}#{" (BOM)" if bom}, newlines #{normalize_newlines? ? "normalized" : "as is"}" }
       end
 
       def write(file, encoding, head, input)

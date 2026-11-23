@@ -14,9 +14,10 @@ module ApplicationImport
     end
 
     LEVELS.each do |level|
-      # Block form: the message is only built when the level is enabled.
-      define_method(level) do |message|
-        logger&.public_send(level) { "#{log_prefix} #{message}" }
+      # debug("text") or debug { "text" }: the logger only builds the line (and the block
+      # only runs) when the level is enabled.
+      define_method(level) do |message = nil, &block|
+        logger&.public_send(level) { "#{log_prefix} #{block ? block.call : message}" }
         nil
       end
     end

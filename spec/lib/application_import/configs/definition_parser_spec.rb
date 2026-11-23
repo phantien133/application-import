@@ -25,7 +25,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     expect(result.except(:columns)).to eq(
       handler: ApplicationImport::Handler,
       file: { checker: ApplicationImport::FileChecker, formats: nil, name_pattern: nil, max_size: nil,
-              format: :csv, reader: nil, encoding: "UTF-8", headers: true, require_all_headers: false, unknown_headers: :skip, extra_cells: :warn, assign: nil, csv: {}, xlsx: {} },
+              format: :csv, reader: nil, encoding: "UTF-8", headers: true, require_all_headers: false, unknown_headers: :skip, extra_cells: :warn, assign: nil, numbers: nil, csv: {}, xlsx: {} },
       transformers: [],
       mapper: nil,
       validators: { file: [], row: [], rows: [], verify: [] },
@@ -56,7 +56,7 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
                                "xlsx" => { "sheet" => "Data" } } })[:file]
 
     expect(file.except(:checker)).to eq(formats: %i[ csv xlsx ], name_pattern: /\Ausers\.csv\z/, max_size: 1,
-      format: :xlsx, reader: nil, encoding: "Shift_JIS", headers: false, require_all_headers: true, unknown_headers: :keep, extra_cells: :reject, assign: nil, csv: { col_sep: ";" }, xlsx: { sheet: "Data" })
+      format: :xlsx, reader: nil, encoding: "Shift_JIS", headers: false, require_all_headers: true, unknown_headers: :keep, extra_cells: :reject, assign: nil, numbers: nil, csv: { col_sep: ";" }, xlsx: { sheet: "Data" })
   end
 
   it "requires file.format to be an allowed format" do
@@ -347,19 +347,49 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     end
   end
 
-  it "parses example/users.yml" do
-    stub_const("User", Class.new(ApplicationRecord))
-    stub_const("Imports::UsersHandler", Class.new(ApplicationImport::Handler))
-    stub_const("Imports::UsersFileChecker", Class.new(ApplicationImport::FileChecker))
-    stub_const("Imports::Users::DomainValidator", Class.new(ApplicationImport::Validators::RowValidator))
-    stub_const("Imports::Users::FileDateValidator", Class.new(ApplicationImport::Validators::FileValidator))
-    stub_const("Imports::Users::ManagersExistValidator", Class.new(ApplicationImport::Validators::VerifyValidator))
-    phone = stub_const("Imports::PhoneCaster", Class.new(ApplicationImport::Casters::Base))
-    config = YAML.safe_load_file(Rails.root.join("lib/application_import/example/users.yml"))
+  describe "example definitions" do
+    def parse_example(name)
+      described_class.new(name.to_sym, YAML.safe_load_file(Rails.root.join("lib/application_import/example/#{name}.yml"))).parse
+    end
 
-    result = described_class.new(:example, config).parse
+    before do
+      models = %w[ User Order Product Member ]
+      classes = {
+        ApplicationImport::Handler => %w[ Imports::UsersHandler Imports::MembersHandler ],
+        ApplicationImport::FileChecker => %w[ Imports::UsersFileChecker Imports::MembersFileChecker ],
+        ApplicationImport::Readers::Base => %w[ Imports::FixedWidthReader ],
+        ApplicationImport::Casters::Base => %w[ Imports::PhoneCaster Imports::CardNumberCaster ],
+        ApplicationImport::Transformers::Base => %w[ Imports::Contacts::PhoneNormalizer ],
+        ApplicationImport::Validators::FileValidator => %w[ Imports::Users::FileDateValidator ],
+        ApplicationImport::Validators::RowValidator => %w[ Imports::Users::DomainValidator ],
+        ApplicationImport::Validators::VerifyValidator => %w[ Imports::Users::ManagersExistValidator Imports::Orders::TotalsValidator ]
+      }
+      models.each { |name| stub_const(name, Class.new(ApplicationRecord)) }
+      classes.each { |base, names| names.each { |name| stub_const(name, Class.new(base)) } }
+    end
 
-    expect(result[:columns].map(&:type)).to eq(%i[ string string integer decimal boolean string string date datetime ])
-    expect(result[:columns].find { |column| column.key == :phone }.options[:caster]).to eq(phone)
+    it "parses every example file" do
+      names = Rails.root.glob("lib/application_import/example/[!_]*.yml").map { |path| File.basename(path, ".yml") }
+
+      expect(names).to match_array(%w[ users orders products contacts members ])
+      names.each { |name| expect { parse_example(name) }.not_to raise_error }
+    end
+
+    it "parses users.yml, the full reference" do
+      result = parse_example(:users)
+
+      expect(result[:columns].map(&:type)).to eq(%i[ string string integer decimal boolean string string date datetime ])
+      expect(result[:columns].find { |column| column.key == :phone }.options[:caster]).to eq(Imports::PhoneCaster)
+    end
+
+    it "parses the scenario options" do
+      orders, products, contacts, members = %w[ orders products contacts members ].map { |name| parse_example(name) }
+
+      expect([ orders[:file][:numbers], orders[:output][:mode], orders[:on_error].max_errors ])
+        .to eq([ { decimal_separator: ",", thousands_separator: "." }, :save, 500 ])
+      expect([ products[:output][:stream], products[:file][:assign] ]).to eq([ true, { ignore: %w[ admin_note price_cents ] } ])
+      expect([ contacts[:file][:headers], contacts[:output][:mode], contacts[:mapper][:options][:only] ]).to eq([ false, :raw, true ])
+      expect([ members[:file][:reader], members[:file][:unknown_headers] ]).to eq([ Imports::FixedWidthReader, :reject ])
+    end
   end
 end

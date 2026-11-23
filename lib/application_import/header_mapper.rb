@@ -85,6 +85,7 @@ module ApplicationImport
 
     def positional_map
       indexes = column_keys.each_with_index.to_h { |key, index| [ index, key ] }
+      debug { "no header row: cells mapped by position to #{column_keys.join(", ")}" }
       return HeaderMap.new(column_keys:, indexes:, keep_extra_from: column_keys.size) if keep_unknown?
 
       HeaderMap.new(column_keys:, indexes:, width: column_keys.size)
@@ -105,6 +106,7 @@ module ApplicationImport
         @headers.each_with_index { |header, index| match(header.to_s.strip, index) }
         check_missing
         handle_unknown
+        @mapper.log(:debug, "headers mapped: #{@indexes.map { |index, key| "#{@headers[index].to_s.strip} -> #{key}" }.join(", ")}")
         HeaderMap.new(column_keys: @mapper.column_keys, indexes: @indexes, width: @headers.size, blank_indexes:)
       end
 

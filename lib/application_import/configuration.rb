@@ -50,6 +50,7 @@ module ApplicationImport
     # Reads SETTINGS_FILE if present; a missing file keeps the built-in defaults.
     def load_settings
       path = Rails.root.join(SETTINGS_FILE)
+      Rails.logger&.debug { "[ApplicationImport] settings #{path.file? ? "loaded from #{path}" : "file absent, built-in defaults"}" }
       path.file? ? load_file(path) : self
     end
 

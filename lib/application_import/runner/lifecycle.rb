@@ -32,6 +32,17 @@ module ApplicationImport
       # Always runs: close the reader, log the summary, call after_import. A failure in
       # after_import is logged and reported, never raised: rows may already be committed,
       # and raising would hide the result (or the original exception).
+      def settings_summary
+        reader_name = definition.reader_class(source.extension).name.demodulize
+        "reader #{reader_name}, output #{output_summary}, stream #{streaming?}, dry_run #{result.dry_run?}, " \
+          "row_errors #{definition.on_error.row_errors}"
+      end
+
+      def output_summary
+        output = definition.output
+        [ output[:mode], output[:model]&.name ].compact.join(" ")
+      end
+
       def finish
         count_valid
         close_reader

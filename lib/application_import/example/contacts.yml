@@ -1,0 +1,50 @@
+# Scenario: a headerless export turned into plain hashes (no database).
+# - headers: false: cells map to the columns below by position
+# - output raw: result.records holds the final attributes, for the caller to use
+# - transformers and a mapper reshape each row; a custom transformer class
+
+file:
+  headers: false               # first record is data; column order = cell order
+  extra_cells: ignore          # trailing cells are dropped silently (kept in row.raw)
+  csv:
+    col_sep: "\t"
+    quote_char: "'"
+    strip: true
+    skip_lines: '\A\s*//'      # comment lines
+
+columns:                       # order matters without headers
+  first_name:
+    required: true
+  last_name: {}
+  email:
+    format: email
+  phone: {}
+  tags: {}
+
+transformers:
+  - type: normalize
+    attributes: [ first_name, last_name ]
+    with: [ squish ]
+  - type: normalize
+    attributes: [ email ]
+    with: [ strip, downcase ]
+  - type: concat
+    from: [ first_name, last_name ]
+    to: full_name
+    separator: " "
+  - type: default
+    attribute: tags
+    value: "imported"
+  - class: Imports::Contacts::PhoneNormalizer   # < ApplicationImport::Transformers::Base
+    country: VN                                 # options handed to the class
+
+mapper:
+  type: rename
+  attributes: { full_name: name, email: email_address, phone: phone, tags: tags }
+  only: true                   # the records hold only these four keys
+
+output:
+  mode: raw                    # default without model
+
+on_error:
+  default: skip

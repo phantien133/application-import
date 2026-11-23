@@ -26,9 +26,14 @@ module ApplicationImport
 
         record_errors(row, errors)
         action = too_many_errors? ? :abort : row_action(errors)
+        log_action(row, errors, action)
         halt! if action == :abort && halt
         row.skip! if action == :skip
         action
+      end
+
+      def log_action(row, errors, action)
+        debug { "line #{row.line}: #{errors.map(&:code).join(", ")} -> #{action}" }
       end
 
       def record_errors(row, errors)

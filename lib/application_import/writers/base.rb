@@ -29,7 +29,10 @@ module ApplicationImport
       def call(rows)
         return 0 if rows.empty?
 
-        transaction? ? within_transaction { write(rows) } : write(rows)
+        debug { "writing #{rows.size} rows#{" in a transaction" if transaction?}" }
+        written = transaction? ? within_transaction { write(rows) } : write(rows)
+        debug { "wrote #{written} of #{rows.size} rows#{" (aborted, rolled back)" if aborted? && transaction?}" }
+        written
       end
 
       def aborted?

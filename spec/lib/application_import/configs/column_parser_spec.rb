@@ -59,6 +59,34 @@ RSpec.describe ApplicationImport::Configs::ColumnParser do
     end
   end
 
+  describe "number separators" do
+    it "keeps them on decimal and (thousands only) integer columns" do
+      expect([ column({ "type" => "decimal", "decimal_separator" => ",", "thousands_separator" => "." }).options.slice(:decimal_separator, :thousands_separator),
+        column({ "type" => "integer", "thousands_separator" => " " }).options[:thousands_separator] ])
+        .to eq([ { decimal_separator: ",", thousands_separator: "." }, " " ])
+      expect(errors).to be_empty
+    end
+
+    it "rejects them on other types and decimal_separator on integers" do
+      column({ "type" => "integer", "decimal_separator" => "," })
+      column({ "thousands_separator" => "." })
+
+      expect(errors).to eq([ "columns.email.decimal_separator is not allowed on integer columns",
+        "columns.email.thousands_separator is not allowed on string columns" ])
+    end
+
+    it "requires one non-digit character and different separators" do
+      column({ "type" => "decimal", "decimal_separator" => "..", "thousands_separator" => "1" })
+      column({ "type" => "decimal", "decimal_separator" => ",", "thousands_separator" => "," })
+
+      expect(errors).to eq([
+        "columns.email.decimal_separator must be one character other than a digit or a sign",
+        "columns.email.thousands_separator must be one character other than a digit or a sign",
+        "columns.email decimal_separator and thousands_separator must differ"
+      ])
+    end
+  end
+
   it "requires at least one column" do
     expect([ parse(nil), parse({}) ]).to eq([ [], [] ])
     expect(errors).to eq([ "columns must define at least one column" ] * 2)

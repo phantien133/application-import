@@ -27,4 +27,36 @@ RSpec.describe ApplicationImport::Casters::DecimalCaster do
       expect { caster.call(value) }.to raise_error(ApplicationImport::Caster::Invalid, "Value must be a number")
     end
   end
+
+  describe "with separators" do
+    subject(:caster) { build_caster(type: :decimal, decimal_separator: ",", thousands_separator: ".") }
+
+    it "parses the configured format" do
+      expect([ "1.234,5", "1,25", "-0,5", "1234", "1.234.567,891" ].map { |value| caster.call(value) })
+        .to eq([ BigDecimal("1234.5"), BigDecimal("1.25"), BigDecimal("-0.5"), BigDecimal(1234), BigDecimal("1234567.891") ])
+    end
+
+    it "rejects other formats" do
+      [ "1,234.5", "1.5", "1e3", "1,2,3", "12.34,5" ].each do |value|
+        expect { caster.call(value) }.to raise_error(ArgumentError)
+      end
+    end
+
+    it "accepts a space as thousands separator" do
+      caster = build_caster(type: :decimal, decimal_separator: ",", thousands_separator: " ")
+
+      expect(caster.call("1 234 567,5")).to eq(BigDecimal("1234567.5"))
+    end
+
+    it "uses file.numbers unless the column has its own" do
+      definition = ApplicationImport::Definition.new(:users, {
+        "columns" => { "email" => nil }, "file" => { "numbers" => { "decimal_separator" => "," } }
+      })
+      plain = ApplicationImport::Column.new(key: :value, headers: [ "Value" ], type: :decimal, options: {})
+      own = ApplicationImport::Column.new(key: :value, headers: [ "Value" ], type: :decimal, options: { decimal_separator: "." })
+
+      expect([ described_class.new(plain, definition:).call("1,5"), described_class.new(own, definition:).call("1.5") ])
+        .to eq([ BigDecimal("1.5"), BigDecimal("1.5") ])
+    end
+  end
 end
