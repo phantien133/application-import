@@ -1,0 +1,83 @@
+handler: Imports::UsersHandler
+
+file:
+  validator: Imports::UsersFileValidator
+
+  formats: [ csv ]
+  name_pattern: '\Ausers_\d{8}\.(csv|xlsx)\z'
+  max_size: 10485760
+  max_rows: 100000
+  encoding: "UTF-8"
+  csv:
+    col_sep: ","
+    quote_char: '"'
+  xlsx:
+    sheet: 0
+columns:
+  email:
+    header: "Email"
+    aliases: [ "E-mail", "Mail" ]
+    type: string
+    required: true
+    max_length: 255
+    format: email
+
+  name:
+    header: "Name"
+    min_length: 2
+    max_length: 100
+
+  age:
+    header: "Age"
+    type: integer
+    min: 0
+    max: 150
+
+  balance:
+    header: "Balance"
+    type: decimal
+    min: 0
+
+  active:
+    header: "Active"
+    type: boolean
+
+  role:
+    header: "Role"
+    inclusion: [ admin, member, guest ]
+
+  joined_on:
+    header: "Joined"
+    type: date
+    date_format: "%d/%m/%Y"
+    min: "2000-01-01"
+
+  last_login_at:
+    header: "Last login"
+    type: datetime
+
+# --- Validators ----------------------------------------------------------------
+# Run after the per-column checks. Either `type` (registered validator) or
+# `class` (any class answering .call or
+#   scope: file (default) -> .call(rows, errors, options), rows = still-valid rows
+#   scope: row            -> .call(row, options)
+validators:
+  - type: unique_in_file
+    keys: [ email ]
+    case_sensitive: false
+
+  - type: unique_in_file
+    keys: [ name, joined_on ]
+
+  - class: Imports::Users::DomainValidator
+    scope: row
+    allowed_domains: [ example.com ]
+
+output:
+  mode: raw
+  model: User
+  batch_size: 1000
+  upsert:
+    conflict_target: [ email ]
+    update: [ name, age, active ]
+on_error: abort
