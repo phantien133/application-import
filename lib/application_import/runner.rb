@@ -1,9 +1,13 @@
 module ApplicationImport
+  # Runs one import: validate_file -> open_reader -> read_headers -> process -> verify
+  # -> write_rows, then close_reader and handler.after_import whatever happened.
+  # The row pipeline (process / verify / write_rows) lives in Runner::Rows.
   class Runner
     include Constants
     include Logging
+    include Rows
 
-    attr_reader :definition, :source, :context, :handler, :result, :rows
+    attr_reader :definition, :source, :context, :handler, :result, :cache
 
     def initialize(definition, source, context: {}, logger: ApplicationImport.logger)
       @definition = definition
@@ -12,7 +16,8 @@ module ApplicationImport
       @context = context.dup.freeze
       @handler = definition.handler_class.new(definition, @context)
       @result = Result.new
-      @rows = []
+      @rows_by_line = {}
+      @cache = {}
     end
 
     # definition.reader_class: file.reader, or the built-in reader for file.format.
@@ -33,8 +38,10 @@ module ApplicationImport
     def run_steps
       step { validate_file }
       step { open_reader }
-      step { read_file }
+      step { read_headers }
       step { process }
+      step { verify }
+      step { write_rows }
     end
 
     def step
@@ -84,29 +91,19 @@ module ApplicationImport
       error("closing the reader failed: #{e.class}: #{e.message}")
     end
 
-    # Streams the data rows through the reader (encoding gate, headers) and
-    # maps them to attributes once the headers are checked (HeaderMapper); a file error
-    # while reading or in the headers halts the import.
-    def read_file
-      reader.on_headers { |headers| map_headers(headers) }.each { |raw| read_row(raw) }
-      info("read #{rows.size} rows from #{source.filename}")
+    # Headers are checked before the first data row. A reader that knows them up front
+    # returns them from #read_headers (mapped now); a streaming reader (CSV) reports them
+    # through on_headers when process reaches the header row. Header errors halt.
+    def read_headers
+      headers = reader.read_headers
+      return map_headers(headers) if headers
+
+      reader.on_headers { |streamed| map_headers(streamed) }
     end
 
     def map_headers(headers)
       @header_map = HeaderMapper.new(definition, logger:).call(headers, result)
       halt! if result.file_errors?
-    end
-
-    # A custom reader that never calls on_headers gets its headers mapped at the first row.
-    def read_row(raw)
-      map_headers(Array(reader.headers)) unless @header_map
-      result.increment(:total)
-      rows << Row.new(line: raw.line, attributes: @header_map.attributes(raw.values), raw: raw.values)
-    end
-
-    # Next stages (casting, validators, write) work on #rows.
-    def process
-      raise NotImplementedError, "#{self.class.name}#process"
     end
 
     def run_validators(stage, subject)

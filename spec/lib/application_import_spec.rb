@@ -128,7 +128,7 @@ RSpec.describe ApplicationImport do
         end
       end)
       stub_const("E2eRunner", Class.new(ApplicationImport::Runner) do
-        def process
+        def write_rows
           result.add_records(rows.map(&:attributes))
         end
       end)

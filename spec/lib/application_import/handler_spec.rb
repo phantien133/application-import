@@ -1,9 +1,19 @@
 RSpec.describe ApplicationImport::Handler do
   subject(:handler) { described_class.new(definition, context) }
 
-  let(:definition) { instance_double(ApplicationImport::Definition) }
   let(:context) { { user_id: 1 } }
   let(:result) { ApplicationImport::Result.new }
+  let(:definition) { build_definition }
+
+  def build_definition(output: {})
+    ApplicationImport::Definition.new(:users, {
+      "columns" => { "email" => nil, "name" => nil, "nickname" => nil }, "output" => output
+    })
+  end
+
+  def row(attributes = {})
+    ApplicationImport::Row.new(line: 2, attributes:, raw: attributes.values)
+  end
 
   it "exposes the definition and context" do
     expect([ handler.definition, handler.context ]).to eq([ definition, context ])
@@ -13,32 +23,83 @@ RSpec.describe ApplicationImport::Handler do
     expect(described_class.new(definition).context).to eq({})
   end
 
-  it "keeps the mapped attributes in map_row" do
-    attributes = { email: "a@example.com" }
+  describe "#map_row" do
+    it "keeps the attributes" do
+      attributes = { email: "a@example.com" }
 
-    expect(handler.map_row(attributes, [ "a@example.com" ])).to equal(attributes)
+      expect(handler.map_row(attributes, row(attributes))).to equal(attributes)
+    end
   end
 
-  it "builds records from row attributes in transform" do
-    rows = [ double(attributes: { id: 1 }), double(attributes: { id: 2 }) ]
+  describe "#build_record" do
+    it "returns nil without output.model" do
+      expect(handler.build_record({ email: "a@example.com" }, row)).to be_nil
+    end
 
-    expect(handler.transform(rows)).to eq([ { id: 1 }, { id: 2 } ])
+    context "with output.model" do
+      let(:definition) { build_definition(output: { "model" => "HandlerSpecUser" }) }
+
+      before do
+        ActiveRecord::Base.connection.create_table(:handler_spec_users, temporary: true) do |t|
+          t.string :email
+          t.string :name
+          t.boolean :admin, default: false
+        end
+        stub_const("HandlerSpecUser", Class.new(ApplicationRecord) { self.table_name = "handler_spec_users" })
+      end
+
+      it "builds a new record with the declared columns the model can set" do
+        record = handler.build_record({ email: "a@example.com", name: "Ann", nickname: "an" }, row)
+
+        expect([ record.class, record.new_record?, record.email, record.name ])
+          .to eq([ HandlerSpecUser, true, "a@example.com", "Ann" ])
+      end
+
+      it "skips declared columns the model has no setter for" do
+        expect { handler.build_record({ nickname: "an" }, row) }.not_to raise_error
+      end
+
+      it "never assigns kept unknown headers" do
+        record = handler.build_record({ :email => "a@example.com", "admin" => "true", :admin => true }, row)
+
+        expect(record.admin).to be(false)
+      end
+
+      it "leaves attributes missing from the row unset" do
+        expect(handler.build_record({ email: "a@example.com" }, row).name).to be_nil
+      end
+
+      it "uses a custom setter defined on the model" do
+        HandlerSpecUser.define_method(:nickname=) { |value| self.name = "~#{value}" }
+
+        expect(handler.build_record({ nickname: "an" }, row).name).to eq("~an")
+      end
+    end
   end
 
-  it "delegates write to the writer and returns its count" do
-    writer = instance_spy(Proc, call: 2)
+  describe "#write" do
+    it "delegates to the writer and returns its count" do
+      rows = [ row(email: "a"), row(email: "b") ]
+      writer = instance_spy(Proc, call: 2)
 
-    expect(handler.write([ { id: 1 }, { id: 2 } ], writer)).to eq(2)
-    expect(writer).to have_received(:call).with([ { id: 1 }, { id: 2 } ])
+      expect(handler.write(rows, writer)).to eq(2)
+      expect(writer).to have_received(:call).with(rows)
+    end
   end
 
   it "has no-op validation hooks that add no errors" do
+    rows = [ row(email: "a") ]
+
     handler.validate_file(Object.new, result)
-    handler.validate_row(Object.new, result)
-    handler.validate_rows(Object.new, result)
-    handler.verify([], result)
+    handler.validate_row(rows.first, result)
+    handler.validate_rows(rows.first, result, {})
+    handler.verify(rows, result)
     handler.after_import(result)
 
-    expect(result.errors).to be_empty
+    expect([ result.errors, rows.first.errors ]).to eq([ [], [] ])
+  end
+
+  it "no longer has transform: writers work on rows" do
+    expect(handler).not_to respond_to(:transform)
   end
 end

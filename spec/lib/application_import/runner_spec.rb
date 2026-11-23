@@ -13,10 +13,10 @@ RSpec.describe ApplicationImport::Runner do
   let(:processor) { -> { result.increment(:total) } }
   let(:runner) do
     process = processor
-    read = stub_read_file? && -> { }
+    read = stub_process? && -> { }
     Class.new(described_class) do
-      define_method(:process) { instance_exec(&process) }
-      define_method(:read_file) { instance_exec(&read) } if read
+      define_method(:write_rows) { instance_exec(&process) }
+      define_method(:process) { instance_exec(&read) } if read
     end.new(definition, source, context: { user_id: 1 })
   end
 
@@ -25,7 +25,7 @@ RSpec.describe ApplicationImport::Runner do
   end
 
   # Orchestration examples stub the read step; "reading the file" uses the real reader.
-  def stub_read_file?
+  def stub_process?
     true
   end
 
@@ -254,17 +254,17 @@ RSpec.describe ApplicationImport::Runner do
     end
   end
 
-  describe "reading the file" do
+  describe "processing the file" do
     let(:processor) { -> { } }
 
-    def stub_read_file?
+    def stub_process?
       false
     end
 
-    it "reads data rows through the definition's reader after validate_file, before process" do
+    it "processes data rows through the definition's reader after validate_file, before write_rows" do
       seen = []
       ImportTestHandler.define_method(:validate_file) { |_source, _result| seen << :validate_file }
-      runner.singleton_class.define_method(:process) { seen << [ :process, rows.map(&:line) ] }
+      runner.singleton_class.define_method(:write_rows) { seen << [ :write_rows, rows.map(&:line) ] }
 
       result = runner.call
 
@@ -273,16 +273,16 @@ RSpec.describe ApplicationImport::Runner do
         ApplicationImport::Row.new(line: 2, attributes: { email: "a@example.com" }, raw: [ "a@example.com" ]),
         ApplicationImport::Row.new(line: 3, attributes: { email: "b@example.com" }, raw: [ "b@example.com" ])
       ])
-      expect(seen).to eq([ :validate_file, [ :process, [ 2, 3 ] ] ])
+      expect(seen).to eq([ :validate_file, [ :write_rows, [ 2, 3 ] ] ])
     end
 
-    it "logs how many rows were read" do
+    it "logs how many rows were processed" do
       log = StringIO.new
       runner = described_class.new(definition, source, logger: ActiveSupport::Logger.new(log))
-      runner.singleton_class.define_method(:process) { nil }
+      runner.singleton_class.define_method(:write_rows) { nil }
       runner.call
 
-      expect(log.string).to include("[ApplicationImport::Runner:users] read 2 rows from users.csv")
+      expect(log.string).to include("[ApplicationImport::Runner:users] processed 2 rows from users.csv")
     end
 
     context "when reading raises a FileError" do
@@ -395,7 +395,7 @@ RSpec.describe ApplicationImport::Runner do
       definition = ApplicationImport::Definition.new(:users, {
         "file" => { "checker" => "ImportTestFileChecker", "reader" => "UpcaseReader" }, "columns" => { "email" => nil }
       })
-      runner = Class.new(described_class) { define_method(:process) { nil } }.new(definition, source)
+      runner = Class.new(described_class) { define_method(:write_rows) { nil } }.new(definition, source)
 
       runner.call
 
@@ -403,10 +403,10 @@ RSpec.describe ApplicationImport::Runner do
     end
   end
 
-  it "does not implement process yet" do
+  it "does not implement write_rows yet" do
     plain = described_class.new(definition, source)
 
-    expect { plain.call }.to raise_error(NotImplementedError, "ApplicationImport::Runner#process")
+    expect { plain.call }.to raise_error(NotImplementedError, "ApplicationImport::Runner#write_rows")
   end
 
   describe "reader lifecycle" do
@@ -418,7 +418,7 @@ RSpec.describe ApplicationImport::Runner do
     end
     let(:processor) do
       log = events
-      -> { log << :process }
+      -> { log << :write_rows }
     end
 
     before do
@@ -435,17 +435,17 @@ RSpec.describe ApplicationImport::Runner do
       @events ||= []
     end
 
-    def stub_read_file?
+    def stub_process?
       false
     end
 
-    it "opens after validate_file, reads, processes, then closes before after_import" do
+    it "opens after validate_file, reads, writes, then closes before after_import" do
       log = events
       ImportTestHandler.define_method(:validate_file) { |_source, _result| log << :validate_file }
 
       runner.call
 
-      expect(events).to eq(%i[ validate_file open read process close after_import ])
+      expect(events).to eq(%i[ validate_file open read write_rows close after_import ])
     end
 
     context "when process raises" do

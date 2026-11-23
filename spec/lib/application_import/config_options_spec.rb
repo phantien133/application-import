@@ -7,7 +7,7 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
 
   before do
     stub_const("ConfigSpecRunner", Class.new(ApplicationImport::Runner) do
-      def process
+      def write_rows
         result.add_records(rows.map(&:attributes))
       end
     end)
@@ -379,6 +379,26 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
         config_error(columns: { "a" => { "header" => "X" }, "b" => { "aliases" => [ " x " ] } }) ])
         .to eq([ "users: columns must define at least one column", "users: columns.Email must be snake_case",
           "users: columns header \"x\" is used more than once" ])
+    end
+  end
+
+  describe "validators" do
+    it "runs with no validators section, an empty one, or a null one" do
+      expect([ outcome, outcome(validators: {}), outcome(validators: nil) ]).to all(eq(ok(ann)))
+    end
+
+    %w[ file row rows verify ].each do |stage|
+      it "runs with an empty or null #{stage} stage" do
+        expect([ outcome(validators: { stage => [] }), outcome(validators: { stage => nil }) ]).to all(eq(ok(ann)))
+      end
+    end
+
+    it "runs with every stage empty" do
+      expect(outcome(validators: { "file" => [], "row" => [], "rows" => [], "verify" => [] })).to eq(ok(ann))
+    end
+
+    it "rejects a stage that is not a list" do
+      expect(config_error(validators: { "row" => {} })).to eq("users: validators.row must be a list")
     end
   end
 

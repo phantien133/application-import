@@ -10,6 +10,12 @@ RSpec.describe ApplicationImport::Configs::ValidatorParser do
     expect(errors).to be_empty
   end
 
+  it "accepts empty or null stages and an empty section" do
+    expect([ parse({}), parse({ "row" => [], "rows" => nil, "verify" => [] }) ])
+      .to all(eq(file: [], row: [], rows: [], verify: []))
+    expect(errors).to be_empty
+  end
+
   it "parses built-in and custom validators per stage" do
     result = parse({
       "file" => [ { "class" => "Imports::FileDate" } ],

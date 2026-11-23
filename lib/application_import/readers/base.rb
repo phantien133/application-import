@@ -46,6 +46,12 @@ module ApplicationImport
         self
       end
 
+      # Headers known before reading the rows (e.g. an XLSX header row read on open), or
+      # nil when they are only known while #each runs (CSV): then #on_headers reports them.
+      def read_headers
+        nil
+      end
+
       def on_headers(&block)
         @on_headers = block
         self
