@@ -31,6 +31,7 @@ columns:
   email:
     header: "Email"
     aliases: [ "E-mail", "Mail" ]
+    header_pattern: '\Ae-?mail( address)?\z'   # regexp (or list), case-insensitive; names win
     type: string
     required: true
     max_length: 255

@@ -128,6 +128,57 @@ RSpec.describe ApplicationImport::HeaderMapper do
     end
   end
 
+  describe "header_pattern" do
+    def definition(file = {})
+      ApplicationImport::Definition.new(:users, {
+        "file" => file,
+        "columns" => {
+          "email" => { "header" => "Email", "header_pattern" => '\Ae-?mail( address)?\z', "required" => true },
+          "phone" => { "header" => "Phone", "header_pattern" => [ "phone", "\\Atel" ] },
+          "note" => { "header" => "Note", "header_pattern" => "no" }
+        }
+      })
+    end
+
+    it "matches headers in any order by regexp, case-insensitively" do
+      header_map = map([ "Telephone number", "E-MAIL ADDRESS" ])
+
+      expect(header_map.attributes(%w[ 123 a ])).to eq(email: "a", phone: "123", note: nil)
+      expect(errors).to eq([])
+    end
+
+    it "prefers an exact name over patterns" do
+      header_map = map([ "Note", "Email" ])
+
+      expect(header_map.attributes(%w[ n a ])).to eq(email: "a", phone: nil, note: "n")
+    end
+
+    it "reports a header matching the patterns of several columns" do
+      map([ "Email", "no phone" ])
+
+      expect(errors).to eq([ [ :ambiguous_headers, 'header "no phone" matches several columns: Phone, Note',
+        { header: "no phone", columns: %w[ Phone Note ] } ] ])
+    end
+
+    it "reports two headers matching one column" do
+      map([ "email", "E-mail address" ])
+
+      expect(errors.map(&:first)).to eq([ :duplicate_headers ])
+    end
+
+    it "treats headers matching no pattern as unknown" do
+      map([ "Email", "Fax" ])
+
+      expect(log.string).to include("ignoring unknown headers: Fax")
+    end
+
+    it "still reports a required column whose pattern matched nothing" do
+      map([ "Phone" ])
+
+      expect(errors.map(&:first)).to eq([ :missing_headers ])
+    end
+  end
+
   context "without a header row (headers: false)" do
     it "maps cells to columns by position, ignoring headers and extra cells" do
       header_map = map(%w[ whatever ], "headers" => false)

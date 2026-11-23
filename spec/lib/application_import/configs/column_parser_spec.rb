@@ -20,6 +20,26 @@ RSpec.describe ApplicationImport::Configs::ColumnParser do
     expect(column({ "header" => " Email ", "aliases" => [ "E-mail" ] }).headers).to eq([ "Email", "E-mail" ])
   end
 
+  describe "header_pattern" do
+    it "compiles one regexp or a list, case-insensitive" do
+      expect([ column({ "header_pattern" => '\Ae-?mail' }).header_patterns, column({ "header_pattern" => [ "a", "b" ] }).header_patterns ])
+        .to eq([ [ /\Ae-?mail/i ], [ /a/i, /b/i ] ])
+      expect(errors).to be_empty
+    end
+
+    it "is absent by default" do
+      expect([ column(nil).options.key?(:header_patterns), column(nil).header_patterns ]).to eq([ false, [] ])
+    end
+
+    it "reports invalid regexps and non-list values" do
+      column({ "header_pattern" => [ "(" ] })
+      column({ "header_pattern" => 1 })
+
+      expect(errors).to match([ a_string_starting_with("columns.email.header_pattern is not a valid regexp"),
+        "columns.email.header_pattern must be a non-empty list of names" ])
+    end
+  end
+
   it "requires at least one column" do
     expect([ parse(nil), parse({}) ]).to eq([ [], [] ])
     expect(errors).to eq([ "columns must define at least one column" ] * 2)

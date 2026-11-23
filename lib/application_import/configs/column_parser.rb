@@ -4,7 +4,7 @@ module ApplicationImport
       include Checks
       include Constants
 
-      KEYS = %w[ header aliases type required max_length min_length min max format inclusion date_format ].freeze
+      KEYS = %w[ header aliases header_pattern type required max_length min_length min max format inclusion date_format ].freeze
       KEY_FORMAT = /\A[a-z_][a-z0-9_]*\z/
 
       def initialize(config, errors)
@@ -42,6 +42,7 @@ module ApplicationImport
       def column_options(options, type, path)
         parsed = {
           required: boolean(options.fetch("required", false), "#{path}.required"),
+          header_patterns: header_patterns(options["header_pattern"], "#{path}.header_pattern"),
           format: format(options["format"], "#{path}.format"),
           inclusion: inclusion(options["inclusion"], "#{path}.inclusion"),
           date_format: date_format(options["date_format"], type, "#{path}.date_format")
@@ -104,6 +105,17 @@ module ApplicationImport
         return add_error(path, "is only allowed on date and datetime columns") if type && %i[ date datetime ].exclude?(type)
 
         (value.is_a?(String) && value.present?) ? value : add_error(path, "must be a strptime format string")
+      end
+
+      # One regexp or a list; matched case-insensitively against the stripped header.
+      def header_patterns(value, path)
+        return if value.nil?
+
+        names(value, path).filter_map do |source|
+          Regexp.new(source, Regexp::IGNORECASE)
+        rescue RegexpError => e
+          add_error(path, "is not a valid regexp: #{e.message}")
+        end.presence
       end
 
       def check_duplicate_headers(columns)

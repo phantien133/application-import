@@ -12,6 +12,10 @@ RSpec.describe ApplicationImport::Column do
       .to eq([ true, false, false ])
   end
 
+  it "exposes header patterns, empty by default" do
+    expect([ column.header_patterns, column.with(options: { header_patterns: [ /mail/i ] }).header_patterns ]).to eq([ [], [ /mail/i ] ])
+  end
+
   it "is an immutable value object" do
     expect(column).to be_frozen
     expect(column).to eq(described_class.new(**column.to_h))

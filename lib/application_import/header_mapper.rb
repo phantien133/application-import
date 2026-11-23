@@ -2,8 +2,11 @@ module ApplicationImport
   # Checks the file headers against the definition's columns and builds the HeaderMap.
   #
   # With a header row (file.headers: true), headers may come in any order. A header
-  # matches a column by its header or one of its aliases, ignoring case and surrounding /
-  # repeated whitespace:
+  # matches a column by its header or one of its aliases (ignoring case and surrounding /
+  # repeated whitespace), else by the column's header_pattern regexps (case-insensitive,
+  # against the stripped header); names win over patterns:
+  #   - a header matching the patterns of several
+  #     columns                                   -> file error ambiguous_headers
   #   - a required column without header          -> file error missing_headers
   #   - an optional column without header         -> its attribute is nil (logged)
   #   - two headers for one column, or repeated
@@ -78,12 +81,27 @@ module ApplicationImport
       private
 
       def match(header, index)
-        column = lookup[HeaderMapper.normalize(header)]
-        return @unknown << [ header, index ] unless column
+        column = lookup[HeaderMapper.normalize(header)] || pattern_match(header)
+        return @unknown << [ header, index ] if column.nil?
+        return if column == :ambiguous
         return duplicate(header, column.header) if @matched.key?(column.key)
 
         @matched[column.key] = header
         @indexes[index] = column.key
+      end
+
+      def pattern_match(header)
+        columns = patterned.select { |column| column.header_patterns.any? { |pattern| pattern.match?(header) } }
+        return columns.first if columns.size <= 1
+
+        names = columns.map(&:header)
+        @result.add_file_error(:ambiguous_headers, "header #{header.inspect} matches several columns: #{names.join(", ")}",
+          details: { header:, columns: names })
+        :ambiguous
+      end
+
+      def patterned
+        @patterned ||= @mapper.definition.columns.select { |column| column.header_patterns.any? }
       end
 
       def lookup

@@ -4,6 +4,10 @@ module ApplicationImport
       headers.first
     end
 
+    def header_patterns
+      options[:header_patterns] || []
+    end
+
     def required?
       options[:required] == true
     end
