@@ -8,6 +8,7 @@ module ApplicationImport
       KEYS = %w[ checker formats name_pattern max_size format reader encoding headers require_all_headers
         unknown_headers extra_cells csv xlsx ].freeze
       XLSX_KEYS = %w[ sheet ].freeze
+      HOST_ALIASES = %w[ locale external filesystem internal ].freeze
 
       def initialize(config, errors)
         @errors = errors
@@ -70,8 +71,13 @@ module ApplicationImport
         names(value, "file.formats").filter_map { |format| one_of(format, FORMATS, "file.formats") }.uniq
       end
 
+      # A real encoding that can be converted to UTF-8 (UTF-16 / UTF-32 without byte
+      # order need a BOM in the file); host-dependent aliases are rejected.
       def encoding(value)
-        Encoding.find(value.to_s).name
+        return add_error("file.encoding", "must name an encoding, not #{value}") if HOST_ALIASES.include?(value.to_s.downcase)
+
+        found = Encoding.find(value.to_s)
+        Readers::EncodingGate.convertible?(found) ? found.name : add_error("file.encoding", "cannot be converted to UTF-8: #{value}")
       rescue ArgumentError
         add_error("file.encoding", "is not a known encoding: #{value}")
       end

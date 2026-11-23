@@ -54,15 +54,41 @@ RSpec.describe ApplicationImport::Writers::Bulk do
     expect([ written, WriterSpecUser.pluck(:name) ]).to eq([ 1, [ "New" ] ])
   end
 
-  it "hands output.import to Model.import as-is, on top of the upsert options" do
+  it "hands output.import to Model.import with the upsert options" do
     allow(WriterSpecUser).to receive(:import).and_call_original
 
     write(writer_rows([ "a@x.io", nil ]), "upsert" => { "conflict_target" => [ "email" ], "update" => [ "name" ] },
-      "import" => { "validate" => false, "on_duplicate_key_update" => { "conflict_target" => [ "email" ], "columns" => [] } })
+      "import" => { "validate" => false })
 
     expect(WriterSpecUser).to have_received(:import)
-      .with(anything, validate: false, on_duplicate_key_update: { conflict_target: [ "email" ], columns: [] })
+      .with(anything, on_duplicate_key_update: { conflict_target: [ :email ], columns: [ :name ] }, validate: false)
     expect(WriterSpecUser.where(name: nil).count).to eq(1)
+  end
+
+  it "counts only inserted rows with on_duplicate_key_ignore" do
+    WriterSpecUser.create!(email: "a@x.io", name: "Old")
+
+    written, failures = write(writer_rows([ "a@x.io", "Ann" ], [ "b@x.io", "Bob" ]), "import" => { "on_duplicate_key_ignore" => true })
+
+    expect([ written, failures, WriterSpecUser.order(:email).pluck(:name) ]).to eq([ 1, [], %w[ Old Bob ] ])
+  end
+
+  it "counts upserted rows as written" do
+    WriterSpecUser.create!(email: "a@x.io", name: "Old")
+
+    written, = write(writer_rows([ "a@x.io", "New" ], [ "b@x.io", "Bob" ]),
+      "upsert" => { "conflict_target" => [ "email" ], "update" => [ "name" ] })
+
+    expect([ written, WriterSpecUser.order(:email).pluck(:name) ]).to eq([ 2, %w[ New Bob ] ])
+  end
+
+  it "marks every row of a batch not_saved with all_or_none when one is invalid" do
+    rows = writer_rows([ "a@x.io", "Ann" ], [ "b@x.io", nil ], [ "c@x.io", "Cy" ])
+
+    written, failures = write(rows, "import" => { "all_or_none" => true })
+
+    expect([ written, failures.sort, WriterSpecUser.count ]).to eq([ 0, [ 2, 3, 4 ], 0 ])
+    expect(rows.first.errors.map(&:details)).to eq([ { all_or_none: true } ])
   end
 
   describe "abort" do

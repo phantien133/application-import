@@ -16,6 +16,12 @@ RSpec.describe ApplicationImport::HeaderMap do
       expect([ map.extra_cells(%w[ a b ]), map.extra_cells([ "a" ]), map.extra_cells([ "a", "b", nil, "" ]) ]).to all(eq([]))
     end
 
+    it "includes non-blank cells under blank headers" do
+      map = described_class.new(column_keys: %i[ email ], indexes: { 0 => :email }, width: 3, blank_indexes: [ 1 ])
+
+      expect([ map.extra_cells(%w[ a SECRET c ]), map.extra_cells([ "a", " ", "c" ]) ]).to eq([ [ [ 1, "SECRET" ] ], [] ])
+    end
+
     it "is empty without width (every cell kept)" do
       keep = described_class.new(column_keys: %i[ email ], indexes: { 0 => :email }, keep_extra_from: 1)
 

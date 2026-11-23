@@ -40,15 +40,23 @@ module ApplicationImport
         row = build_row(raw)
         row_checks(row).each do |check|
           check.call
-          break if row.errors? && !definition.on_error.collect_all?
+          break if stop_row?(row)
         end
         settle_all(row)
       end
 
+      # row_errors: first stops the row at the first check reporting an error that is
+      # not allowed (skip or abort); allowed errors let the row go on (it is written).
+      def stop_row?(row)
+        return false if definition.on_error.collect_all? || !row.errors?
+
+        row.errors.any? { |error| definition.on_error.action_for(error.code) != :allow }
+      end
+
       # The steps of one row, in order; each may report errors on the row.
       def row_checks(row)
-        [ -> { check_extra_cells(row) }, -> { cast_row(row) }, *transformer_checks(row), -> { map_row(row) },
-          *row_stage(row), *rows_stage(row) ]
+        [ -> { check_extra_cells(row) }, -> { guard(Caster) { cast_row(row) } }, *transformer_checks(row),
+          -> { map_row(row) }, *row_stage(row), *rows_stage(row) ]
       end
 
       # mapper (if any) -> handler.map_row -> handler.build_record; errors raised by the

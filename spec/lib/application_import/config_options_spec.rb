@@ -215,6 +215,24 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
     it "rejects unknown encodings" do
       expect(config_error(file: { "encoding" => "nope" })).to eq("users: file.encoding is not a known encoding: nope")
     end
+
+    it "rejects encodings Ruby cannot convert to UTF-8, and host-dependent aliases" do
+      expect([ config_error(file: { "encoding" => "Windows-1258" }), config_error(file: { "encoding" => "EUC-TW" }),
+        config_error(file: { "encoding" => "locale" }) ])
+        .to eq([ "users: file.encoding cannot be converted to UTF-8: Windows-1258", "users: file.encoding cannot be converted to UTF-8: EUC-TW",
+          "users: file.encoding must name an encoding, not locale" ])
+    end
+
+    it "reads convertible dummy encodings" do
+      content = "Email,Name\na@x.io,名前\n".encode("ISO-2022-JP")
+
+      expect(outcome(content, file: { "encoding" => "ISO-2022-JP" })).to eq(ok(email: "a@x.io", name: "名前"))
+    end
+
+    it "accepts UTF-16 / UTF-32 (a BOM is then required in the file)" do
+      expect([ config_error(file: { "encoding" => "UTF-16" }), outcome("Email,Name\na,b\n", file: { "encoding" => "UTF-16" }) ])
+        .to eq([ nil, failed(:invalid_encoding) ])
+    end
   end
 
   describe "file.headers" do
@@ -318,6 +336,13 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
       expect([ result.status, result.errors.map { |e| [ e.code, e.line, e.message, e.details ] }, rows ]).to eq([
         :failed, [ [ :extra_cells, nil, "line 2 has 1 cells more than the headers", { line: 2, cells: { 3 => "extra" } } ] ], []
       ])
+    end
+
+    it "counts cells under a blank header as extra cells" do
+      file = { "require_all_headers" => true, "unknown_headers" => "reject", "extra_cells" => "reject" }
+
+      expect(outcome("Email,Name,\na@x.io,Ann,SECRET\n", file:)).to eq(failed(:extra_cells))
+      expect(outcome("Email,Name,\na@x.io,Ann,\n", file:)).to eq(ok(ann))
     end
 
     it "ignores trailing blank cells" do

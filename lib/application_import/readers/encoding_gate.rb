@@ -19,6 +19,22 @@ module ApplicationImport
         "\xFE\xFF".b => Encoding::UTF_16BE
       }.freeze
 
+      # Encodings that only make sense with a byte order mark in the file.
+      BOM_ONLY = [ Encoding::UTF_16, Encoding::UTF_32 ].freeze
+
+      class << self
+        # Whether content in this encoding can be read: UTF-8, BOM-only UTF-16/32, or any
+        # encoding Ruby can convert to UTF-8 (some, e.g. Windows-1258, cannot).
+        def convertible?(encoding)
+          return true if encoding == Encoding::UTF_8 || BOM_ONLY.include?(encoding)
+
+          Encoding::Converter.new(encoding, Encoding::UTF_8)
+          true
+        rescue Encoding::ConverterNotFoundError
+          false
+        end
+      end
+
       # io: the UTF-8 content (rewound); encoding: the source encoding used; bom: BOM found.
       Text = Data.define(:io, :encoding, :bom)
 
@@ -50,7 +66,8 @@ module ApplicationImport
       def transcode(input, file)
         head = read_chunk(input)
         bom, encoding = detect_bom(head)
-        raise invalid("#{encoding} needs a BOM to be read", encoding) if encoding.dummy?
+        raise invalid("#{encoding} needs a BOM to be read", encoding) if BOM_ONLY.include?(encoding)
+        raise invalid("#{encoding} cannot be converted to UTF-8", encoding) unless self.class.convertible?(encoding)
 
         write(file, encoding, head.byteslice((bom&.bytesize || 0)..), input)
         [ encoding, !bom.nil? ]

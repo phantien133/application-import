@@ -20,7 +20,8 @@ module ApplicationImport
   #                         the record, without cast or rules; the others are warned
   #                         about (needs output.model)
   #       reject         -> file error unknown_headers
-  #     blank headers are ignored (warned) by keep, assign and reject
+  #     blank headers are ignored (warned) by keep, assign and reject; cells under a
+  #     blank header count as extra cells (file.extra_cells)
   # Exact headers (every column, nothing else): require_all_headers: true +
   # unknown_headers: reject.
   # Without a header row (file.headers: false), cells map to columns by position; with
@@ -101,10 +102,14 @@ module ApplicationImport
         @headers.each_with_index { |header, index| match(header.to_s.strip, index) }
         check_missing
         handle_unknown
-        HeaderMap.new(column_keys: @mapper.column_keys, indexes: @indexes, width: @headers.size)
+        HeaderMap.new(column_keys: @mapper.column_keys, indexes: @indexes, width: @headers.size, blank_indexes:)
       end
 
       private
+
+      def blank_indexes
+        @headers.each_index.select { |index| @headers[index].to_s.strip.empty? }
+      end
 
       def match(header, index)
         column = lookup[HeaderMapper.normalize(header)] || pattern_match(header)

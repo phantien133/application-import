@@ -161,38 +161,25 @@ RSpec.describe ApplicationImport::Runner do
     end
   end
 
-  describe "row errors" do
+  describe "row errors reaching a step (raised outside any row)" do
     let(:processor) do
       lambda do
-        actions = [
-          [ 2, :required ], [ 3, :duplicate ], [ 4, :invalid_type ], [ 5, :required ]
-        ].map do |line, code|
+        [ [ 2, :duplicate ], [ 3, :required ] ].each do |line, code|
           result.increment(:total)
           handle_error(ApplicationImport::Errors::RowError.new("#{code} on #{line}", line:, column: :email, code:))
         end
-        result.add_records([ actions ])
       end
     end
 
-    it "continues on allowed and skipped codes and halts on others with the default abort" do
+    def on_error_config
+      { "default" => "skip", "allow" => [ "duplicate" ] }
+    end
+
+    it "are recorded and abort whatever on_error says (per-row on_error is applied inside process / verify)" do
       result = runner.call
 
-      expect([ result.status, result.stats[:total], result.errors.map(&:line) ]).to eq([ :failed, 3, [ 2, 3, 4 ] ])
-      expect(result.records).to be_empty
+      expect([ result.status, result.stats[:total], result.errors.map(&:line) ]).to eq([ :failed, 1, [ 2 ] ])
       expect(runner.handler.calls.last).to eq([ :after_import, result ])
-    end
-
-    context "when the default is skip" do
-      def on_error_config
-        { "default" => "skip", "allow" => [ "duplicate" ] }
-      end
-
-      it "returns the action for each error and completes with errors" do
-        result = runner.call
-
-        expect([ result.status, result.stats[:total], result.records ])
-          .to eq([ :completed_with_errors, 4, [ %i[ skip allow skip skip ] ] ])
-      end
     end
   end
 
@@ -204,10 +191,10 @@ RSpec.describe ApplicationImport::Runner do
       -> { raise ApplicationImport::Errors::RowsError.new("duplicate email", lines: [ 2, 5 ], columns: [ :email ], code: :duplicate) }
     end
 
-    it "records it with every line in details and still returns the result" do
+    it "records it with every line in details, aborts and still returns the result" do
       result = runner.call
 
-      expect(result.status).to eq(:completed_with_errors)
+      expect(result.status).to eq(:failed)
       expect(result.errors.map(&:to_h)).to eq([
         { line: 2, column: "email", code: :duplicate, message: "duplicate email", details: { lines: [ 2, 5 ], columns: [ "email" ] } }
       ])
@@ -253,7 +240,7 @@ RSpec.describe ApplicationImport::Runner do
     expect(runner.context).not_to equal(context)
   end
 
-  context "when the file validator raises a skipped RowsError" do
+  context "when the file validator raises a RowsError (skip configured)" do
     let(:file_validation) do
       ->(_source, _result) { raise ApplicationImport::Errors::RowsError.new("dup", lines: [ 2, 3 ], code: :duplicate) }
     end
@@ -262,10 +249,10 @@ RSpec.describe ApplicationImport::Runner do
       "skip"
     end
 
-    it "records the error and still runs the next step" do
+    it "records the error and aborts before processing rows" do
       result = runner.call
 
-      expect([ result.status, result.stats[:total], result.errors.map(&:code) ]).to eq([ :completed_with_errors, 1, [ :duplicate ] ])
+      expect([ result.status, result.stats[:total], result.errors.map(&:code) ]).to eq([ :failed, 0, [ :duplicate ] ])
     end
   end
 

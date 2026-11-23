@@ -194,6 +194,25 @@ RSpec.describe ApplicationImport::Readers::EncodingGate do
     end
   end
 
+  describe ".convertible?" do
+    it "is true for UTF-8, BOM-only UTF-16 / UTF-32 and encodings with a converter" do
+      expect(%w[ UTF-8 UTF-16 UTF-32 Shift_JIS ISO-2022-JP IBM037 Windows-1252 ].map { |name| described_class.convertible?(Encoding.find(name)) })
+        .to all(be(true))
+    end
+
+    it "is false for encodings without a converter to UTF-8" do
+      expect(%w[ Windows-1258 EUC-TW ].map { |name| described_class.convertible?(Encoding.find(name)) }).to all(be(false))
+    end
+  end
+
+  context "with an encoding that cannot be converted (config bypassed)" do
+    let(:definition) { instance_double(ApplicationImport::Definition, name: :users, file: { encoding: "Windows-1258" }) }
+
+    it "rejects it as invalid_encoding instead of raising" do
+      expect(rejection("a\n")).to eq([ :invalid_encoding, "Windows-1258 cannot be converted to UTF-8 [encoding: Windows-1258]" ])
+    end
+  end
+
   context "with a dummy encoding and no BOM" do
     %w[ UTF-16 UTF-32 ].each do |name|
       it "asks for a BOM for #{name}" do

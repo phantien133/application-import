@@ -225,8 +225,10 @@ RSpec.describe ApplicationImport::HeaderMapper do
       end
     end
 
-    it "sets the width to the header row size" do
-      expect(map(%w[ Email Age Other ]).width).to eq(3)
+    it "sets the width to the header row size and remembers blank headers" do
+      header_map = map([ "Email", "", "Age", nil ])
+
+      expect([ header_map.width, header_map.blank_indexes ]).to eq([ 4, [ 1, 3 ] ])
     end
 
     it "fills cells missing at the end of a row with nil and ignores extra cells" do

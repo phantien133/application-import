@@ -112,7 +112,6 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
       "file.csv has unknown keys: sep",
       "output.model is required when mode is bulk",
       "output.batch_size must be an integer >= 1",
-      "output.upsert.update references unknown columns: age",
       "output.upsert.conflict_target must be a non-empty list of names",
       "on_error must be one of abort, skip"
     )
@@ -127,10 +126,42 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
     stub_const("ImportUser", Class.new(ApplicationRecord))
     output = parse({ "output" => { "mode" => "bulk", "model" => "ImportUser", "batch_size" => 500, "transaction" => false,
                                    "upsert" => { "conflict_target" => [ "email" ], "update" => [ "name" ] },
-                                   "import" => { "validate" => false, "on_duplicate_key_ignore" => true } } })[:output]
+                                   "import" => { "validate" => false, "timestamps" => false } } })[:output]
 
     expect(output).to eq(mode: :bulk, model: ImportUser, batch_size: 500, transaction: false,
-      upsert: { conflict_target: [ :email ], update: [ :name ] }, import: { validate: false, on_duplicate_key_ignore: true }, save: {})
+      upsert: { conflict_target: [ :email ], update: [ :name ] }, import: { validate: false, timestamps: false }, save: {})
+  end
+
+  describe "output options" do
+    def output_error(output)
+      stub_const("ImportUser", Class.new(ApplicationRecord))
+      config_error({ "output" => { "model" => "ImportUser", **output } })
+    end
+
+    it "requires upsert.update" do
+      expect(output_error("upsert" => { "conflict_target" => [ "email" ] }))
+        .to eq([ "output.upsert.update must be a non-empty list of names" ])
+    end
+
+    it "rejects import options the bulk writer does not support" do
+      expect(output_error("import" => { "track_validation_failures" => true, "raise_error" => true, "validate" => true }))
+        .to eq([ "output.import has unsupported options: track_validation_failures, raise_error" ])
+    end
+
+    it "rejects on_duplicate_key options together with upsert" do
+      expect(output_error("upsert" => { "conflict_target" => [ "email" ], "update" => [ "name" ] },
+        "import" => { "on_duplicate_key_ignore" => true }))
+        .to eq([ "output.import on_duplicate_key_ignore cannot be combined with upsert" ])
+    end
+
+    it "accepts on_duplicate_key_ignore and all_or_none without upsert" do
+      expect(output_error("import" => { "on_duplicate_key_ignore" => true, "all_or_none" => true })).to be_a(Hash)
+    end
+
+    it "rejects save options other than validate, context and touch" do
+      expect(output_error("mode" => "save", "save" => { "validate" => false, "context" => "import", "touch" => false, "nope" => 1 }))
+        .to eq([ "output.save has unsupported options: nope" ])
+    end
   end
 
   describe "class references" do

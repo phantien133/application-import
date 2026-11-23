@@ -184,6 +184,24 @@ RSpec.describe ApplicationImport::Runner::Rows do
       expect(events).not_to include([ :map_row, 3 ])
     end
 
+    it "keeps processing the file when a custom caster raises a RowError" do
+      stub_const("RaisingCaster", Class.new(ApplicationImport::Casters::Base) do
+        define_method(:call) do |value|
+          raise ApplicationImport::Errors::RowError.new("bad email", line: 3, code: :bad_email) if value.start_with?("b")
+
+          value
+        end
+      end)
+      allow(self).to receive_messages(content: "email,age\na@x.io,1\nb@x.io,2\nc@x.io,3\n",
+        config: config.merge("columns" => { "email" => { "caster" => "RaisingCaster" }, "age" => { "type" => "integer" } }))
+
+      result = run
+
+      expect([ result.status, result.stats[:total], result.errors.map { |e| [ e.line, e.code ] } ])
+        .to eq([ :completed_with_errors, 3, [ [ 3, :bad_email ] ] ])
+      expect(events.find { |event| event.first == :write_rows }.last).to eq([ 2, 4 ])
+    end
+
     context "with row_errors: all" do
       def on_error
         { "default" => "skip", "row_errors" => "all" }
@@ -533,14 +551,22 @@ RSpec.describe ApplicationImport::Runner::Rows do
     context "with an allowed error under first" do
       def config
         { "validators" => { "row" => [ { "class" => "FirstCheck" }, { "class" => "SecondCheck" } ] },
-          "on_error" => { "allow" => %w[ one two ] } }
+          "on_error" => { "default" => "skip", "allow" => %w[ one two three ] } }
       end
 
-      it "keeps the row but skips its remaining checks" do
+      it "goes on with the next checks and keeps the row" do
         result = run
 
-        expect([ result.status, result.errors.map(&:code).uniq ]).to eq([ :completed_with_errors, %i[ one two ] ])
-        expect(events).to include([ :write_rows, [ 2, 3 ] ])
+        expect([ result.status, result.errors.select { |e| e.line == 2 }.map(&:code) ]).to eq([ :completed_with_errors, %i[ one two three ] ])
+        expect(events).to include([ :validate_row, 2 ], [ :write_rows, [ 2, 3 ] ])
+      end
+
+      it "still stops at the first check with an error that is not allowed" do
+        allow(self).to receive(:config).and_return(config.merge("on_error" => { "default" => "skip", "allow" => %w[ three ] }))
+
+        result = run
+
+        expect(result.errors.select { |e| e.line == 2 }.map(&:code)).to eq(%i[ one two ])
         expect(events).not_to include([ :validate_row, 2 ])
       end
     end

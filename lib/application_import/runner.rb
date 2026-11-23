@@ -66,10 +66,10 @@ module ApplicationImport
       action
     end
 
-    def error_action(error)
-      return :abort if error.is_a?(Errors::FileError)
-
-      definition.on_error.action_for(error.code)
+    # Row errors are handled per row inside process / verify (guard). One reaching a
+    # step was raised outside any row (e.g. by a file validator): recorded, then abort.
+    def error_action(_error)
+      :abort
     end
 
     # The file checker's errors halt at once: file validators and handler.validate_file
