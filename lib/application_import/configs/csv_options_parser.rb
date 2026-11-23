@@ -19,6 +19,11 @@ module ApplicationImport
       include Checks
 
       PATH = "file.csv".freeze
+      # Options the reader manages itself (row shape, header row, blank / skipped lines and
+      # their line numbers) cannot be passed through.
+      MANAGED = %i[ headers return_headers header_converters converters unconverted_fields skip_blanks skip_lines
+        write_headers write_converters write_nil_value write_empty_value ].freeze
+
       SEPARATORS = %i[ col_sep quote_char row_sep ].freeze
       STRING_KEYS = %w[ col_sep quote_char row_sep ].freeze
       KEYS = (STRING_KEYS + %w[ liberal_parsing strip skip_lines max_field_size passthrough ]).freeze
@@ -50,7 +55,10 @@ module ApplicationImport
       end
 
       def passthrough(value, path)
-        mapping(value, path).deep_symbolize_keys
+        options = mapping(value, path).deep_symbolize_keys
+        managed = options.keys & MANAGED
+        add_error(path, "has options the reader manages: #{managed.join(", ")}") if managed.any?
+        options.except(*MANAGED)
       end
 
       def quote_char(value, path)

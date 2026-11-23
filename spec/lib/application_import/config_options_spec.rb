@@ -105,8 +105,14 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
       expect(outcome(file: { "formats" => "csv" })).to eq(ok(ann))
     end
 
-    it "lets an allowed extension through while file.format picks the reader" do
-      expect(outcome(filename: "users.xlsx", file: { "formats" => %w[ csv xlsx ] })).to eq(ok(ann))
+    it "picks the reader of an allowed extension over file.format" do
+      expect(definition(file: { "formats" => %w[ csv xlsx ] }).reader_class("xlsx")).to eq(ApplicationImport::Readers::Xlsx)
+      expect { run(filename: "users.xlsx", file: { "formats" => %w[ csv xlsx ] }) }.to raise_error(NotImplementedError)
+    end
+
+    it "falls back to file.format for an extension outside formats or without formats" do
+      expect([ definition(file: { "formats" => %w[ csv ] }).reader_class("txt"), definition.reader_class("xlsx") ])
+        .to all(eq(ApplicationImport::Readers::Csv))
     end
 
     it "rejects unknown formats and empty lists" do
@@ -356,6 +362,57 @@ RSpec.describe "ApplicationImport config options" do # rubocop:disable RSpec/Des
 
     it "rejects other values" do
       expect(config_error(file: { "extra_cells" => "drop" })).to eq("users: file.extra_cells must be one of warn, ignore, reject")
+    end
+  end
+
+  describe "kept unknown headers and the record" do
+    before do
+      ActiveRecord::Base.connection.create_table(:kept_spec_users, temporary: true) do |t|
+        t.string :email
+        t.string :phone
+      end
+      stub_const("KeptSpecUser", Class.new(ApplicationRecord) { self.table_name = "kept_spec_users" })
+    end
+
+    let(:content) { "Email,Name,Phone\na@x.io,Ann,090\n" }
+
+    def rows_with(**config)
+      captured = []
+      stub_const("KeptRunner", Class.new(ApplicationImport::Runner) { define_method(:write_rows) { captured.concat(rows) } })
+      ApplicationImport.run(definition(file: { "unknown_headers" => "keep" }, output: { "model" => "KeptSpecUser" }, **config),
+        StringIO.new(content), filename: "users.csv", runner: "KeptRunner", logger:)
+      captured
+    end
+
+    it "are passed through in the attributes but never assigned to the record" do
+      row = rows_with.first
+
+      expect([ row.attributes["Phone"], row.record.phone ]).to eq([ "090", nil ])
+    end
+
+    it "are not imported by the writers" do
+      ApplicationImport.run(definition(file: { "unknown_headers" => "keep" }, output: { "model" => "KeptSpecUser" }), StringIO.new(content),
+        filename: "users.csv", logger:)
+
+      expect(KeptSpecUser.pluck(:email, :phone)).to eq([ [ "a@x.io", nil ] ])
+    end
+
+    it "appear in the raw output hash" do
+      result = ApplicationImport.run(definition(file: { "unknown_headers" => "keep" }), StringIO.new(content), filename: "users.csv", logger:)
+
+      expect(result.records).to eq([ ann.merge("Phone" => "090") ])
+    end
+
+    it "reach the record when mapped explicitly: mapper rename" do
+      expect(rows_with(mapper: { "type" => "rename", "attributes" => { "Phone" => "phone" } }).first.record.phone).to eq("090")
+    end
+
+    it "reach the record when mapped explicitly: a transformer" do
+      stub_const("PhoneFromHeader", Class.new(ApplicationImport::Transformers::Base) do
+        define_method(:call) { |attributes, _row| { phone: attributes["Phone"] } }
+      end)
+
+      expect(rows_with(transformers: [ { "class" => "PhoneFromHeader" } ]).first.record.phone).to eq("090")
     end
   end
 

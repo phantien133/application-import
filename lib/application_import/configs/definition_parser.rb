@@ -66,11 +66,16 @@ module ApplicationImport
       end
 
       def resolve_references(parsed)
-        parsed[:output][:model] = ClassResolver.resolve!(parsed[:output][:model], base: "ActiveRecord::Base")
+        resolve_output(parsed[:output])
         resolve_casters(parsed[:columns])
         TransformerParser.resolve!(parsed[:transformers])
         MapperParser.resolve!(parsed[:mapper])
         ValidatorParser.resolve!(parsed[:validators], output_model: parsed[:output][:model], name: @name)
+      end
+
+      def resolve_output(output)
+        output[:model] = ClassResolver.resolve!(output[:model], base: "ActiveRecord::Base")
+        OutputParser.check_model_attributes!(output, name: @name)
       end
 
       def resolve_casters(columns)

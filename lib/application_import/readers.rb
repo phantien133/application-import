@@ -15,7 +15,7 @@ module ApplicationImport
 
     class << self
       def for(definition, source, logger: ApplicationImport.logger)
-        definition.reader_class.new(definition, source, logger:)
+        definition.reader_class(source.extension).new(definition, source, logger:)
       end
 
       def reader_class(format)

@@ -23,6 +23,33 @@ module ApplicationImport
         on_duplicate_key_update on_duplicate_key_ignore all_or_none ].freeze
       SAVE_OPTIONS = %i[ validate context touch ].freeze
 
+      class << self
+        # upsert conflict_target / update must name attributes of the model (checked once
+        # the model class is resolved; skipped when its attributes cannot be read, e.g. the
+        # table does not exist yet).
+        def check_model_attributes!(output, name:)
+          model = output[:model]
+          upsert = output[:upsert]
+          return if model.nil? || upsert.nil?
+
+          known = attribute_names(model)
+          unknown = known && ((upsert[:conflict_target] + upsert[:update]).map(&:to_s).uniq - known)
+          return if unknown.blank?
+
+          raise Errors::ConfigError, "#{name}: output.upsert references unknown #{model.name} attributes: #{unknown.join(", ")}"
+        end
+
+        private
+
+        # In a savepoint: a failing schema query must not abort a transaction the caller
+        # has open (PostgreSQL).
+        def attribute_names(model)
+          model.transaction(requires_new: true) { model.attribute_types.keys }.presence
+        rescue ActiveRecord::ActiveRecordError
+          nil
+        end
+      end
+
       def initialize(config, column_keys, errors)
         @errors = errors
         @output = mapping(config, "output")

@@ -7,25 +7,25 @@ module ApplicationImport
     #
     # Line endings: unless row_sep is configured, CRLF and lone CR are turned into LF
     # first, so files mixing \n, \r\n and \r parse (quoted values get LF too).
-    # skip_lines is applied here, not by CSV.new, so skipped lines still count
-    # towards line numbers: a record whose raw text matches is dropped. A String is
-    # matched literally, like CSV does.
+    # skip_lines is applied by SkipLines on the raw lines before the parser (not by
+    # CSV.new): only lines starting a record, blanked so line numbers stay right.
     # Raises FileError malformed_csv, plus the Base and EncodingGate errors.
     class Csv < Base
       private
 
       def each_record(&)
         options = parser_options
-        skip = skip_pattern(options.delete(:skip_lines))
-        gate = EncodingGate.new(definition, logger:, normalize_newlines: !options.key?(:row_sep))
-        gate.call(source) { |text| parse(text.io, options, skip, &) }
+        skip = options.delete(:skip_lines)
+        filter = skip && SkipLines.new(skip, options.fetch(:quote_char, '"'))
+        gate = EncodingGate.new(definition, logger:, normalize_newlines: !options.key?(:row_sep), line_filter: filter)
+        gate.call(source) { |text| parse(text.io, options, &) }
       end
 
-      def parse(io, options, skip)
+      def parse(io, options)
         csv = ::CSV.new(io, **options)
         line = 1
         while (values = csv.shift)
-          yield line, values unless skip&.match?(csv.line)
+          yield line, values
           line += lines_in(csv.line)
         end
       rescue ::CSV::MalformedCSVError => e
@@ -39,10 +39,6 @@ module ApplicationImport
 
         debug("passing unvalidated CSV options: #{passthrough.keys.join(", ")}")
         options.except(:passthrough).merge(passthrough)
-      end
-
-      def skip_pattern(value)
-        value.is_a?(String) ? Regexp.new(Regexp.escape(value)) : value
       end
 
       # Physical lines consumed by one record, quoted line breaks included.

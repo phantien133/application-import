@@ -23,9 +23,10 @@ module ApplicationImport
       @cache = {}
     end
 
-    # definition.reader_class: file.reader, or the built-in reader for file.format.
+    # definition.reader_class: file.reader, the reader of the file's extension when it is
+    # in file.formats, else the one for file.format.
     def reader
-      @reader ||= definition.reader_class.new(definition, source, logger:)
+      @reader ||= definition.reader_class(source.extension).new(definition, source, logger:)
     end
 
     # Returns the result. Any exception escaping the steps (a bug in custom code, a

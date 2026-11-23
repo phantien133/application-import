@@ -43,10 +43,12 @@ module ApplicationImport
 
       attr_reader :definition
 
-      def initialize(definition, logger: ApplicationImport.logger, normalize_newlines: false, chunk_size: CHUNK_SIZE)
+      def initialize(definition, logger: ApplicationImport.logger, normalize_newlines: false, chunk_size: CHUNK_SIZE,
+        line_filter: nil)
         @definition = definition
         @logger = logger
         @normalize_newlines = normalize_newlines
+        @line_filter = line_filter
         @chunk_size = chunk_size
       end
 
@@ -77,7 +79,7 @@ module ApplicationImport
       end
 
       def write(file, encoding, head, input)
-        output = Output.new(file, normalize_newlines?)
+        output = Output.new(file, normalize_newlines?, @line_filter)
         pump(Decoder.for(encoding), output, head, input)
         raise Errors::FileError.new("file is empty", code: :empty_file) unless output.content?
       rescue Output::NulError

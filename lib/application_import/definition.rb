@@ -58,8 +58,16 @@ module ApplicationImport
     end
 
     # file.reader when configured, else the built-in reader for file.format.
-    def reader_class
-      file[:reader] || Readers.reader_class(file[:format])
+    # file.reader when configured; else the built-in reader for the file's extension when
+    # it is one of file.formats; else the one for file.format (csv by default).
+    def reader_class(extension = nil)
+      return file[:reader] if file[:reader]
+
+      Readers.reader_class(format_for(extension) || file[:format])
+    end
+
+    def format_for(extension)
+      file[:formats]&.find { |format| format.to_s == extension.to_s }
     end
   end
 end

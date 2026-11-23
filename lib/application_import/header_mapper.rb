@@ -14,7 +14,9 @@ module ApplicationImport
   #     kept unknown headers                      -> file error duplicate_headers
   #   - unknown headers, per file.unknown_headers:
   #       skip (default) -> ignored (logged)
-  #       keep           -> passed through as attributes keyed by the header String
+  #       keep           -> passed through as attributes keyed by the header String: never
+  #                         assigned to the record; available to transformers, the mapper
+  #                         and the handler to map explicitly, and in raw output
   #       assign         -> like keep, and the record builder assigns those matching a
   #                         model attribute (header downcased, spaces -> _) straight to
   #                         the record, without cast or rules; the others are warned

@@ -9,9 +9,12 @@ module ApplicationImport
 
         attr_reader :lines
 
-        def initialize(file, normalize_newlines)
+        # line_filter: optional object with #filter(text) / #flush (e.g. SkipLines),
+        # applied to the normalized text.
+        def initialize(file, normalize_newlines, line_filter = nil)
           @file = file
           @normalize = normalize_newlines
+          @line_filter = line_filter
           @pending_cr = ""
           @lines = 0
           @content = false
@@ -22,6 +25,10 @@ module ApplicationImport
           text = normalize(text) if @normalize
           raise NulError if text.include?("\0")
 
+          emit(@line_filter ? @line_filter.filter(text) : text)
+        end
+
+        def emit(text)
           @lines += text.count("\n")
           @content ||= text.match?(/\S/)
           @file.write(text)
@@ -30,6 +37,7 @@ module ApplicationImport
         def finish
           @finishing = true
           write("") unless @pending_cr.empty?
+          emit(@line_filter.flush) if @line_filter
           @file.flush
         end
 

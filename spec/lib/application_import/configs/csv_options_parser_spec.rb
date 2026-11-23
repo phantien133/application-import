@@ -69,6 +69,13 @@ RSpec.describe ApplicationImport::Configs::CsvOptionsParser do
     expect(parse("x").last).to eq([ "file.csv must be a mapping" ])
   end
 
+  it "rejects passthrough options the reader manages" do
+    options, errors = parse("passthrough" => { "headers" => true, "skip_blanks" => true, "skip_lines" => "#", "nil_value" => "" })
+
+    expect([ options, errors ]).to eq([ { passthrough: { nil_value: "" } },
+      [ "file.csv.passthrough has options the reader manages: headers, skip_blanks, skip_lines" ] ])
+  end
+
   describe "passthrough" do
     it "symbolizes keys and keeps values unvalidated" do
       options, errors = parse("passthrough" => { "nil_value" => "", "future_option" => { "a" => 1 }, "col_sep" => 5 })

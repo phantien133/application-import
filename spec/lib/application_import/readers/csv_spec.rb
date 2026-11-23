@@ -184,12 +184,10 @@ RSpec.describe ApplicationImport::Readers::Csv do
     end
   end
 
-  context "with skip_lines given as a passthrough string" do
-    let(:file_config) { { "csv" => { "passthrough" => { "skip_lines" => "#" } } } }
-    let(:content) { "Email,Name\n#,x\na.b,c\n" }
-
-    it "matches it literally and keeps line numbers" do
-      expect(rows).to eq([ [ 3, %w[ a.b c ] ] ])
+  context "with skip_lines given through passthrough" do
+    it "is rejected: the reader manages skipped lines itself" do
+      expect { ApplicationImport::Definition.new(:users, { "columns" => { "email" => nil }, "file" => { "csv" => { "passthrough" => { "skip_lines" => "#" } } } }) }
+        .to raise_error(ApplicationImport::Errors::ConfigError, /file.csv.passthrough has options the reader manages: skip_lines/)
     end
   end
 
@@ -361,11 +359,29 @@ RSpec.describe ApplicationImport::Readers::Csv do
     end
   end
 
+  context "with comment lines holding quotes" do
+    let(:file_config) { { "csv" => { "skip_lines" => '\A#' } } }
+    let(:content) { "# don't \"quote\nEmail,Name\na,b\n" }
+
+    it "skips them before the parser (no malformed_csv)" do
+      expect([ rows, reader.headers ]).to eq([ [ [ 3, %w[ a b ] ] ], %w[ Email Name ] ])
+    end
+  end
+
+  context "with skip_lines matching inside a quoted value" do
+    let(:file_config) { { "csv" => { "skip_lines" => "^#" } } }
+    let(:content) { "Email,Note\na,\"first\n# kept\"\n# dropped\nb,c\n" }
+
+    it "keeps the value and still reports physical lines" do
+      expect(rows).to eq([ [ 2, [ "a", "first\n# kept" ] ], [ 5, %w[ b c ] ] ])
+    end
+  end
+
   context "with skip_lines matching the whole file" do
     let(:file_config) { { "csv" => { "skip_lines" => "." } } }
 
-    it "raises empty_file for the missing header" do
-      expect(file_error).to eq([ :empty_file, "file has no header row" ])
+    it "raises empty_file (every line blanked)" do
+      expect(file_error).to eq([ :empty_file, "file is empty" ])
     end
   end
 

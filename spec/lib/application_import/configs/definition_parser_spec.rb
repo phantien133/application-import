@@ -132,6 +132,37 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
       upsert: { conflict_target: [ :email ], update: [ :name ] }, import: { validate: false, timestamps: false }, save: {})
   end
 
+  describe "upsert attributes" do
+    before do
+      ActiveRecord::Base.connection.create_table(:upsert_spec_users, temporary: true) do |t|
+        t.string :email
+        t.string :name
+      end
+      stub_const("UpsertSpecUser", Class.new(ApplicationRecord) { self.table_name = "upsert_spec_users" })
+    end
+
+    def upsert(conflict_target, update)
+      parse({ "output" => { "model" => "UpsertSpecUser", "upsert" => { "conflict_target" => conflict_target, "update" => update } } })
+    end
+
+    it "accepts model attributes, including names produced by transformers or the mapper" do
+      expect { upsert([ "email" ], [ "name" ]) }.not_to raise_error
+    end
+
+    it "rejects names that are not attributes of the model" do
+      expect { upsert([ "mail" ], %w[ name nickname ]) }
+        .to raise_error(ApplicationImport::Errors::ConfigError, "users: output.upsert references unknown UpsertSpecUser attributes: mail, nickname")
+    end
+
+    it "is skipped when the model's attributes cannot be read (no table yet)" do
+      stub_const("NoTableUser", Class.new(ApplicationRecord) { self.table_name = "no_such_table" })
+
+      expect { parse({ "output" => { "model" => "NoTableUser", "upsert" => { "conflict_target" => [ "x" ], "update" => [ "y" ] } } }) }
+        .not_to raise_error
+      expect(ActiveRecord::Base.connection.select_value("SELECT 1")).to eq(1)
+    end
+  end
+
   describe "output options" do
     def output_error(output)
       stub_const("ImportUser", Class.new(ApplicationRecord))

@@ -22,6 +22,14 @@ RSpec.describe ApplicationImport::Mappers::Rename do
     expect(rename({ a: 1, b: 2 }, attributes: { a: :b, b: :a })).to eq(b: 1, a: 2)
   end
 
+  it "renames a kept unknown header (String key) when listed" do
+    expect(rename({ :email => "a", "Phone" => "1" }, attributes: { Phone: :phone })).to eq(email: "a", phone: "1")
+  end
+
+  it "prefers the Symbol key when both exist" do
+    expect(rename({ :email => "a", "email" => "b" }, attributes: { email: :user_email })).to eq("email" => "b", :user_email => "a")
+  end
+
   it "keeps String keys of kept unknown headers unless listed" do
     expect(rename({ :email => "a", "Phone" => "1" }, attributes: { email: :user_email }))
       .to eq("Phone" => "1", :user_email => "a")
