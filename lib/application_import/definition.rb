@@ -9,13 +9,37 @@ module ApplicationImport
         raise Errors::ConfigError, "invalid import name: #{name.inspect}"
       end
 
-      def load(name)
-        path = Pathname(ApplicationImport.configuration.config_path).join("#{normalize_name(name)}.yml")
+      # Loads by import name (config_path/<name>.yml) or by explicit file path;
+      # the name of a path-loaded definition is the file's basename.
+      def load(source)
+        name, path = locate(source)
         raise Errors::ConfigError, "import config not found: #{path}" unless path.file?
 
-        new(name, YAML.safe_load_file(path) || {})
+        build(name, YAML.safe_load_file(path) || {})
       rescue Psych::Exception => e
         raise Errors::ConfigError, "invalid YAML in #{path}: #{e.message}"
+      end
+
+      # Inline definition with the configured defaults applied.
+      def build(name, config)
+        new(name, ApplicationImport.configuration.with_defaults(config))
+      end
+
+      def locate(source)
+        return locate_path(Rails.root.join(source.to_s)) if path?(source)
+
+        name = normalize_name(source)
+        [ name, ApplicationImport.configuration.config_path.join("#{name}.yml") ]
+      end
+
+      private
+
+      def path?(source)
+        source.is_a?(Pathname) || (source.is_a?(String) && Constants::YAML_EXTENSIONS.include?(File.extname(source)))
+      end
+
+      def locate_path(path)
+        [ normalize_name(path.basename(path.extname).to_s), path ]
       end
     end
 

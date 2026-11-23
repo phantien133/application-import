@@ -1,7 +1,8 @@
 module ApplicationImport
   module Constants
     HALT = :application_import_halt
-    NAME_FORMAT = /\A[a-z_][a-z0-9_]*\z/
+    NAME_FORMAT = /\A[a-z][a-z0-9_]*\z/
+    YAML_EXTENSIONS = %w[ .yml .yaml ].freeze
 
     COMPLETED = :completed
     COMPLETED_WITH_ERRORS = :completed_with_errors

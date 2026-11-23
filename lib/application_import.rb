@@ -4,21 +4,26 @@ module ApplicationImport
 
   class << self
     def configuration
-      @configuration || CONFIGURATION_LOCK.synchronize { @configuration ||= Configuration.new }
+      @configuration || CONFIGURATION_LOCK.synchronize { @configuration ||= Configuration.new.load_settings }
     end
 
     def configure
       yield configuration
+      clear_definitions!
     end
 
+    # Drops the configuration; the next access rebuilds it (re-reading the settings file).
     def reset_configuration!
-      CONFIGURATION_LOCK.synchronize { @configuration = Configuration.new }
+      CONFIGURATION_LOCK.synchronize { @configuration = nil }
+      clear_definitions!
     end
 
-    def definition(name)
-      return Definition.load(name) unless cache_definitions?
+    # `source` is an import name (config_path/<name>.yml) or a definition file path
+    # (Pathname, or a String ending in .yml/.yaml; relative to Rails.root).
+    def definition(source)
+      return Definition.load(source) unless cache_definitions?
 
-      DEFINITIONS.compute_if_absent(Definition.normalize_name(name)) { Definition.load(name) }
+      DEFINITIONS.compute_if_absent(Definition.locate(source).last.to_s) { Definition.load(source) }
     end
 
     def clear_definitions!

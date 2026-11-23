@@ -35,7 +35,7 @@ RSpec.describe ApplicationImport::Definition do
     end
 
     it "rejects anything else" do
-      [ nil, 1, "", "Users", "../users", "/etc/passwd", "users.yml", "a b" ].each do |name|
+      [ nil, 1, "", "_config", "Users", "../users", "/etc/passwd", "users.yml", "a b" ].each do |name|
         expect { described_class.normalize_name(name) }
           .to raise_error(ApplicationImport::Errors::ConfigError, "invalid import name: #{name.inspect}")
       end
@@ -49,8 +49,12 @@ RSpec.describe ApplicationImport::Definition do
   describe ".load" do
     let(:dir) { Pathname(Dir.mktmpdir) }
 
-    before { allow(ApplicationImport).to receive(:configuration).and_return(double(config_path: dir)) }
-    after { FileUtils.remove_entry(dir) }
+    before { ApplicationImport.configure { |config| config.config_path = dir } }
+
+    after do
+      ApplicationImport.reset_configuration!
+      FileUtils.remove_entry(dir)
+    end
 
     it "loads <config_path>/<name>.yml" do
       dir.join("users.yml").write("on_error: skip\n")
@@ -74,6 +78,38 @@ RSpec.describe ApplicationImport::Definition do
       dir.join("broken.yml").write("columns: [\n")
 
       expect { described_class.load(:broken) }.to raise_error(ApplicationImport::Errors::ConfigError, /invalid YAML/)
+    end
+
+    it "loads an explicit file path, named after its basename" do
+      dir.join("sub").mkpath
+      dir.join("sub/members.yaml").write("on_error: skip\n")
+
+      [ dir.join("sub/members.yaml"), dir.join("sub/members.yaml").to_s ].each do |path|
+        expect(described_class.load(path).name).to eq(:members)
+      end
+    end
+
+    it "resolves relative file paths against Rails.root" do
+      expect(described_class.locate("app/imports/users.yml")).to eq([ :users, Rails.root.join("app/imports/users.yml") ])
+    end
+
+    it "rejects a file path whose basename is not a valid name" do
+      expect { described_class.locate(dir.join("Bad-Name.yml")) }
+        .to raise_error(ApplicationImport::Errors::ConfigError, /invalid import name: "Bad-Name"/)
+    end
+
+    it "applies the configured defaults under the file config" do
+      parser_input = nil
+      stub_const("ApplicationImport::Configs::DefinitionParser", Class.new do
+        define_method(:initialize) { |_name, config| parser_input = config }
+        define_method(:parse) { { file: {} } }
+      end)
+      ApplicationImport.configure { |config| config.defaults = { on_error: "abort", file: { max_rows: 5 } } }
+      dir.join("users.yml").write("on_error: skip\n")
+
+      described_class.load(:users)
+
+      expect(parser_input).to eq("on_error" => "skip", "file" => { "max_rows" => 5 })
     end
 
     it "raises ConfigError on YAML that is not safe to load" do
