@@ -65,6 +65,15 @@ group :development, :test do
 
   # Testing framework [https://github.com/rspec/rspec-rails]
   gem "rspec-rails", "~> 8.1"
+  # Test data factories [https://github.com/thoughtbot/factory_bot_rails]
+  gem "factory_bot_rails", "~> 6.4"
+  # Fake data for factories [https://github.com/faker-ruby/faker]
+  gem "faker", "~> 3.5"
+end
+
+group :test do
+  # One-liner matchers for validations and database columns [https://github.com/thoughtbot/shoulda-matchers]
+  gem "shoulda-matchers", "~> 6.5"
 end
 
 group :development do
