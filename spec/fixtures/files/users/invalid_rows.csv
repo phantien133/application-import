@@ -1,0 +1,8 @@
+Email,Name,Age,Balance,Active,Phone,Role,Nickname,Joined
+not-an-email,Ann,30,,,,,,
+bob@example.com,Bob,abc,,,,,,
+carl@example.com,C,,,,,,,
+dan@example.com,Dan,,,,,owner,,
+erin@example.com,Erin,,,,,,,
+Erin@example.com,Erin Again,,,,,,,
+,Frank,,,,,,,

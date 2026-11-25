@@ -18,11 +18,17 @@ module Users
     end
 
     def call
-      result = ApplicationImport.run(DEFINITION, @file, context: @context, dry_run: @dry_run)
+      result = execute_import
       info("#{DEFINITION} import #{result.status}#{" (dry run)" if result.dry_run?}: #{result.stats}")
       raise ImportFailedError.new(result) if result.failed?
 
       result
+    end
+
+    private
+
+    def execute_import
+      ApplicationImport.run(DEFINITION, @file, context: @context, dry_run: @dry_run)
     end
   end
 end
