@@ -1,5 +1,5 @@
 class UsersController < ApplicationController
-  PERMITTED = %i[ email name age balance active phone role nickname label created_on last_login_at ].freeze
+  PERMITTED = %i[ email name birthday balance active phone role nickname label created_on last_login_at ].freeze
   DEFAULT_PER_PAGE = 25
   MAX_PER_PAGE = 100
 

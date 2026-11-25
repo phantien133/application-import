@@ -7,8 +7,9 @@ class User < ApplicationRecord
   validates :email, presence: true, length: { maximum: 255 }, format: { with: URI::MailTo::EMAIL_REGEXP },
     uniqueness: { case_sensitive: false }
   validates :name, presence: true, length: { minimum: 2, maximum: 100 }
-  validates :age, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 150 },
-    allow_nil: true
+  # Not in the future, at most 150 years ago.
+  validates :birthday, comparison: { greater_than_or_equal_to: ->(_user) { 150.years.ago.to_date },
+                                     less_than_or_equal_to: ->(_user) { Date.current } }, allow_nil: true
   validates :balance, numericality: { greater_than_or_equal_to: 0 }
   validates :active, inclusion: { in: [ true, false ] }
   validates :role, inclusion: { in: ROLES }

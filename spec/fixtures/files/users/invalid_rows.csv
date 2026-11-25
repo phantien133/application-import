@@ -1,8 +1,9 @@
-Email,Name,Age,Balance,Active,Phone,Role,Nickname,Joined
-not-an-email,Ann,30,,,,,,
-bob@example.com,Bob,abc,,,,,,
-carl@example.com,C,,,,,,,
-dan@example.com,Dan,,,,,owner,,
-erin@example.com,Erin,,,,,,,
-Erin@example.com,Erin Again,,,,,,,
-,Frank,,,,,,,
+Email,Name,Birthday,Active,Phone,Role,Nickname,Joined
+not-an-email,Ann,1990-01-01,,0900000001,,ann,
+bob@example.com,Bob,15/07/2001,,0900000002,,bob,
+carl@example.com,C,1990-01-01,,0900000003,,carl,
+dan@example.com,Dan,1990-01-01,,0900000004,owner,dan,
+erin@example.com,Erin,1990-01-01,,0900000005,,erin,
+Erin@example.com,Erin Again,1991-01-01,,0900000006,,erin2,
+,Frank,1990-01-01,,0900000007,,frank,
+gina@example.com,Gina,,,,,,

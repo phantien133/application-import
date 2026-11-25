@@ -30,11 +30,9 @@ RSpec.describe User do
       it { is_expected.to validate_length_of(:name).is_at_least(2).is_at_most(100) }
     end
 
-    describe "age" do
-      it do
-        expect(user).to validate_numericality_of(:age).only_integer
-          .is_greater_than_or_equal_to(0).is_less_than_or_equal_to(150).allow_nil
-      end
+    describe "birthday" do
+      it { is_expected.to allow_values(nil, Date.current, 150.years.ago.to_date).for(:birthday) }
+      it { is_expected.not_to allow_values(Date.current + 1, 150.years.ago.to_date - 1).for(:birthday) }
     end
 
     describe "balance" do

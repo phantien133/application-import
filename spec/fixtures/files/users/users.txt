@@ -1,2 +1,2 @@
-Email,Name,Age,Balance,Active,Phone,Role,Nickname,Joined
-ann@example.com,Ann,,,,,,,
+Email,Name,Birthday,Active,Phone,Role,Nickname,Joined
+ann@example.com,Ann,1996-03-04,,0912345678,,ann,

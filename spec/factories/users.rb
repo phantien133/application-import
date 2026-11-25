@@ -2,7 +2,7 @@ FactoryBot.define do
   factory :user do
     sequence(:email) { |n| "user#{n}@#{Faker::Internet.domain_name}" }
     name { Faker::Name.name }
-    age { Faker::Number.between(from: 18, to: 80) }
+    birthday { Faker::Date.birthday(min_age: 18, max_age: 80) }
     balance { Faker::Number.decimal(l_digits: 4, r_digits: 2) }
     active { true }
     phone { Faker::Number.number(digits: 10).to_s }

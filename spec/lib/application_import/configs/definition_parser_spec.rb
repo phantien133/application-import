@@ -364,7 +364,11 @@ RSpec.describe ApplicationImport::Configs::DefinitionParser do
         ApplicationImport::Validators::RowValidator => %w[ Imports::Users::DomainValidator ],
         ApplicationImport::Validators::VerifyValidator => %w[ Imports::Users::ManagersExistValidator Imports::Orders::TotalsValidator ]
       }
-      models.each { |name| stub_const(name, Class.new(ApplicationRecord)) }
+      # Tables that do not exist: the examples are not checked against the app's own schema
+      # (e.g. the real users table), so upsert attribute checks are skipped.
+      models.each do |name|
+        stub_const(name, Class.new(ApplicationRecord) { self.table_name = "example_#{name.underscore.pluralize}" })
+      end
       classes.each { |base, names| names.each { |name| stub_const(name, Class.new(base)) } }
     end
 

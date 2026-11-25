@@ -1,6 +1,8 @@
 # Users import: POST /users/import (UserImportsController).
 # CSV with a header row; a row whose email already exists updates that user (upsert).
 # Bad rows are skipped and reported; the others are written.
+# balance is not imported: a Balance column is ignored, new users get the database
+# default (0) and existing users keep theirs.
 file:
   formats: [ csv ]
   max_size: 5242880              # 5 MiB
@@ -18,25 +20,24 @@ columns:
     required: true
     min_length: 2
     max_length: 100
-  age:
-    header: "Age"
-    type: integer
-    min: 0
-    max: 150
-  balance:
-    header: "Balance"
-    type: decimal
-    min: 0
+  birthday:
+    header: "Birthday"
+    required: true
+    type: date
+    date_format: "%Y-%m-%d"      # strict; the model rejects future dates
+    min: "1876-01-01"
   active:
     header: "Active"
     type: boolean
   phone:
     header: "Phone"
+    required: true
     max_length: 30
   role:
     header: "Role"
   nickname:
     header: "Nickname"
+    required: true
     max_length: 50
   created_on:
     header: "Joined"
@@ -53,9 +54,6 @@ transformers:
   - type: default
     attribute: active
     value: true
-  - type: default
-    attribute: balance
-    value: 0
 
 validators:
   row:
@@ -73,7 +71,7 @@ output:
   batch_size: 1000
   upsert:
     conflict_target: [ email ]
-    update: [ name, age, balance, active, phone, role, nickname, created_on ]
+    update: [ name, birthday, active, phone, role, nickname, created_on ]
 
 on_error:
   default: skip

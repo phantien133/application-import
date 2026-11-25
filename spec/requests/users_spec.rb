@@ -1,7 +1,7 @@
 RSpec.describe "Users" do
   let(:json) { response.parsed_body.deep_symbolize_keys }
   let(:valid_params) do
-    { user: { email: " New.User@Example.com ", name: "New User", age: 30, role: " Admin " } }
+    { user: { email: " New.User@Example.com ", name: "New User", birthday: "1996-01-02", role: " Admin " } }
   end
 
   describe "GET /users" do

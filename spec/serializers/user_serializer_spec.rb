@@ -2,12 +2,12 @@ RSpec.describe UserSerializer do
   subject(:json) { described_class.new(user).serializable_hash.deep_symbolize_keys }
 
   let(:user) do
-    build_stubbed(:user, balance: BigDecimal("1234.5"), created_on: Date.new(2026, 1, 2),
+    build_stubbed(:user, balance: BigDecimal("1234.5"), birthday: Date.new(1996, 3, 4), created_on: Date.new(2026, 1, 2),
       last_login_at: Time.utc(2026, 11, 25, 9, 29, 35, 123_456), created_at: Time.utc(2026, 1, 1))
   end
 
   it "renders exactly the public attributes" do
-    expect(json.keys).to eq(%i[ id email name age active phone role nickname label created_by_id balance created_on
+    expect(json.keys).to eq(%i[ id email name active phone role nickname label created_by_id balance birthday created_on
       last_login_at created_at updated_at ])
   end
 
@@ -16,7 +16,7 @@ RSpec.describe UserSerializer do
   end
 
   it "renders dates as ISO 8601" do
-    expect(json[:created_on]).to eq("2026-01-02")
+    expect(json.values_at(:birthday, :created_on)).to eq(%w[ 1996-03-04 2026-01-02 ])
   end
 
   it "renders times as ISO 8601 UTC with milliseconds" do
