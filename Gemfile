@@ -76,7 +76,7 @@ end
 
 group :test do
   # One-liner matchers for validations and database columns [https://github.com/thoughtbot/shoulda-matchers]
-  gem "shoulda-matchers", "~> 6.5"
+  gem "shoulda-matchers", "~> 8.0"
 end
 
 group :development do
