@@ -8,6 +8,8 @@ Rails.application.routes.draw do
   # JSON health check rendered with the ApiResponse envelope.
   get "health", to: "health#show"
 
+  resources :users, only: %i[ index show create update destroy ]
+
   # Defines the root path route ("/")
   # root "posts#index"
 end

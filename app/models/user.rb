@@ -2,6 +2,7 @@ class User < ApplicationRecord
   ROLES = %w[ admin member guest ].freeze
 
   normalizes :email, with: ->(email) { email.strip.downcase }
+  normalizes :role, with: ->(role) { role.strip.downcase }
 
   validates :email, presence: true, length: { maximum: 255 }, format: { with: URI::MailTo::EMAIL_REGEXP },
     uniqueness: { case_sensitive: false }

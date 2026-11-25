@@ -4,7 +4,7 @@ RSpec.describe User do
   describe "database" do
     it { is_expected.to have_db_column(:email).of_type(:string).with_options(null: false) }
     it { is_expected.to have_db_column(:name).of_type(:string).with_options(null: false) }
-    it { is_expected.to have_db_column(:balance).of_type(:decimal).with_options(precision: 12, scale: 2, null: false, default: 0) }
+    it { is_expected.to have_db_column(:balance).of_type(:decimal).with_options(precision: 12, scale: 2, null: false, default: 0.0) }
     it { is_expected.to have_db_column(:active).of_type(:boolean).with_options(null: false, default: true) }
     it { is_expected.to have_db_column(:role).of_type(:string).with_options(null: false, default: "member") }
     it { is_expected.to have_db_index(:email).unique }
@@ -13,6 +13,7 @@ RSpec.describe User do
 
   describe "normalizations" do
     it { is_expected.to normalize(:email).from("  John.Doe@Example.COM ").to("john.doe@example.com") }
+    it { is_expected.to normalize(:role).from(" Admin ").to("admin") }
   end
 
   describe "validations" do
