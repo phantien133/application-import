@@ -9,26 +9,25 @@ class UsersController < ApplicationController
     page, per_page = pagination
     users = User.order(:id).offset((page - 1) * per_page).limit(per_page)
 
-    render_success(serialize(users), meta: { page:, per_page:, total: User.count })
+    with_meta(users, page:, per_page:, total: User.count)
   end
 
   def show
-    render_success(serialize(@user))
+    @user
   end
 
   def create
-    user = User.create!(user_params)
-    render_success(serialize(user), status: :created)
+    User.create!(user_params)
   end
 
   def update
     @user.update!(user_params)
-    render_success(serialize(@user))
+    @user
   end
 
   def destroy
     @user.destroy!
-    head :no_content
+    nil
   end
 
   private
@@ -45,10 +44,5 @@ class UsersController < ApplicationController
 
   def user_params
     params.expect(user: PERMITTED)
-  end
-
-  # A user (Hash) or a collection (Array of Hashes).
-  def serialize(user_or_users)
-    UserSerializer.new(user_or_users).serializable_hash
   end
 end

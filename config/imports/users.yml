@@ -1,0 +1,80 @@
+# Users import: POST /users/import (UserImportsController).
+# CSV with a header row; a row whose email already exists updates that user (upsert).
+# Bad rows are skipped and reported; the others are written.
+file:
+  formats: [ csv ]
+  max_size: 5242880              # 5 MiB
+  unknown_headers: skip
+
+columns:
+  email:
+    header: "Email"
+    aliases: [ "E-mail", "Mail" ]
+    required: true
+    max_length: 255
+    format: email
+  name:
+    header: "Name"
+    required: true
+    min_length: 2
+    max_length: 100
+  age:
+    header: "Age"
+    type: integer
+    min: 0
+    max: 150
+  balance:
+    header: "Balance"
+    type: decimal
+    min: 0
+  active:
+    header: "Active"
+    type: boolean
+  phone:
+    header: "Phone"
+    max_length: 30
+  role:
+    header: "Role"
+  nickname:
+    header: "Nickname"
+    max_length: 50
+  created_on:
+    header: "Joined"
+    type: date
+
+# Blank cells would assign nil over the database defaults.
+transformers:
+  - type: normalize
+    attributes: [ email, role ]
+    with: [ strip, downcase ]
+  - type: default
+    attribute: role
+    value: member
+  - type: default
+    attribute: active
+    value: true
+  - type: default
+    attribute: balance
+    value: 0
+
+validators:
+  row:
+    - type: model
+      skip: [ uniqueness ]       # existing emails are updated (upsert), not errors
+  rows:
+    - type: unique_in_file
+      keys: [ email ]
+
+output:
+  model: User
+  mode: bulk
+  batch_size: 1000
+  upsert:
+    conflict_target: [ email ]
+    update: [ name, age, balance, active, phone, role, nickname, created_on ]
+
+on_error:
+  default: skip
+  row_errors: first              # a row stops at its first failing check: the model
+                                 # validator does not repeat the column rules' errors
+  max_errors: 1000
