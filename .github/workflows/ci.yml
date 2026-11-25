@@ -4,13 +4,21 @@ on:
   pull_request:
   push:
     branches: [ master, main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# One run per branch / PR: a new push cancels the run still going for the same ref
+# (pushes to master always finish).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   scan_ruby:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout code
@@ -29,6 +37,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       RUBOCOP_CACHE_ROOT: tmp/rubocop
     steps:
@@ -55,6 +64,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -83,6 +93,11 @@ jobs:
         uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1
         with:
           bundler-cache: true
+
+      - name: Check autoloading (Zeitwerk)
+        env:
+          RAILS_ENV: test
+        run: bin/rails zeitwerk:check
 
       - name: Run specs
         env:
