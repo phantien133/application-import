@@ -36,7 +36,7 @@ gem "thruster", require: false
 gem "activerecord-import", "~> 3.0"
 
 # JSON serializers for API responses [https://github.com/okuramasafumi/alba]
-gem "alba", "~> 3.10"
+gem "alba", "~> 4.0"
 
 # CSV parsing for imports (bundled gem since Ruby 3.4, must be declared) [https://github.com/ruby/csv]
 gem "csv", "~> 3.3"
