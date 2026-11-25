@@ -61,6 +61,8 @@ validators:
   row:
     - type: model
       skip: [ uniqueness ]       # existing emails are updated (upsert), not errors
+    - class: Imports::Users::BlockedEmailDomainValidator   # -> blocked_domain
+      blocked_domains: [ mailinator.com, tempmail.com ]
   rows:
     - type: unique_in_file
       keys: [ email ]

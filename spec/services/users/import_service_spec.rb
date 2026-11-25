@@ -95,6 +95,15 @@ RSpec.describe Users::ImportService do
         end
       end
 
+      context "when a row has an email of a blocked domain (custom validator)" do
+        let(:file) { csv_file("ann@mailinator.com,Ann,,,,,,,", "bob@example.com,Bob,,,,,,,") }
+
+        it "skips that row with blocked_domain and writes the others" do
+          expect { call }.to change(User, :count).by(1)
+          expect(error_rows(call)).to eq([ [ 2, "email", :blocked_domain ] ])
+        end
+      end
+
       context "with exactly max_errors (1000) row errors" do
         let(:file) { csv_file("ann@example.com,Ann,,,,,,,", *Array.new(1000) { |index| "bad-#{index},Bob,,,,,,," }) }
 
